@@ -9,7 +9,7 @@ This is an updated implementation of `packer-aws-windows-ssh` with the following
 - OpenSSH is installed with `Add-WindowsCapability` per <https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows>
 - The code for downloading the ssh key is somewhat simplified and saves it to `$env:ProgramData\ssh\administrators_authorized_keys`
 - Sysprep is run via the newer [EC2launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2launch.html)
-- Installed [Chocolatey](https://chocolatey.org) for package management
+- [Chocolatey](https://chocolatey.org) is installed for package management
 - The template enables [Fast Launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/win-ami-config-fast-launch.html) for the AMI (see `enable_fast_launch = true`)
 
 ## Usage
