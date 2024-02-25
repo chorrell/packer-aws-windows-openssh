@@ -1,0 +1,23 @@
+name: Validate packer templates
+
+on:
+  pull_request:
+
+jobs:
+  packer-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup `packer`
+        uses: hashicorp/setup-packer@main
+        id: setup
+
+      - name: Run `packer init`
+        id: init
+        run: "packer init ./aws-windows-ssh.pkr.hcl"
+
+      - name: Run `packer validate`
+        id: validate
+        run: "packer validate ./aws-windows-ssh.pkr.hcl"
