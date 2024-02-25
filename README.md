@@ -14,7 +14,7 @@ This is an updated implementation of `packer-aws-windows-ssh` with the following
 
 ## Usage
 
-In order to build this iamge you need and AWS account an access key. Once you have that you need to set the following environent variables:
+In order to build this image you need an AWS account an access key. Once you have that you need to set the following environment variables:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
@@ -29,7 +29,7 @@ export AWS_SECRET_ACCESS_KEY="<AWS_SECRET_ACCESS_KEY>"
 export AWS_DEFAULT_REGION="ca-central-1"
 ```
 
-Once that's setup you'll need to initialize the tempalte:
+Once that's setup you'll need to initialize the template:
 
 ```bash
 packer init .
