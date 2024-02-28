@@ -1,0 +1,16 @@
+name: Run PSPSScriptAnalyzer on PowerShell Scripts
+
+on:
+  pull_request:
+
+jobs:
+  PSScriptAnalyzer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PSScriptAnalyzer on PowerShell Scripts
+        shell: pwsh
+        run: |
+          Invoke-ScriptAnalyzer -Path ./files/ -Recurse -Severity Error -EnableExit
