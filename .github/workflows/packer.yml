@@ -3,6 +3,9 @@ name: Validate packer templates
 on:
   pull_request:
 
+env:
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   packer-validate:
     runs-on: ubuntu-latest
