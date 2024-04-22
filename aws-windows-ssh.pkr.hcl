@@ -4,6 +4,10 @@ packer {
       source  = "github.com/hashicorp/amazon"
       version = "~> 1"
     }
+    windows-update = {
+      version = "0.15.0"
+      source  = "github.com/rgl/windows-update"
+    }
   }
 }
 
@@ -58,6 +62,8 @@ source "amazon-ebs" "aws-windows-ssh" {
 
 build {
   sources = ["source.amazon-ebs.aws-windows-ssh"]
+
+  provisioner "windows-update" {}
 
   provisioner "powershell" {
     script = "files/InstallChoco.ps1"
