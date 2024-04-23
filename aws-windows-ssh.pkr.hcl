@@ -69,6 +69,10 @@ build {
     script = "files/InstallChoco.ps1"
   }
 
+  provisioner "windows-restart" {
+    max_retries = 3
+  }
+
   provisioner "powershell" {
     script = "files/PrepareImage.ps1"
   }
