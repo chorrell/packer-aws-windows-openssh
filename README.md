@@ -5,7 +5,7 @@ This repository contains a Packer template and supporting files for creating an 
 This is an updated implementation of `packer-aws-windows-ssh` with the following changes:
 
 - The Packer template `aws-windows-ssh.pkr.hcl` is coded in [HCL2](https://developer.hashicorp.com/packer/guides/hcl) rather than JSON.
-- The image is based off Windows Server 2022
+- The image is based on Windows Server 2022
 - OpenSSH is installed with `Add-WindowsCapability` per <https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows>
 - The code for downloading the ssh key is somewhat simplified and saves it to `$env:ProgramData\ssh\administrators_authorized_keys`
 - Sysprep is run via the newer [EC2launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2launch.html)
@@ -14,7 +14,7 @@ This is an updated implementation of `packer-aws-windows-ssh` with the following
 
 ## Usage
 
-In order to build this image you need an AWS account an access key. Once you have that you need to set the following environment variables:
+In order to build this image you need an AWS account and an access key. Once you have that you need to set the following environment variables:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
