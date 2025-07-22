@@ -5,8 +5,8 @@ packer {
       version = "~> 1"
     }
     windows-update = {
-      version = "0.15.0"
       source  = "github.com/rgl/windows-update"
+      version = "~> 0.16.0"
     }
   }
 }
@@ -47,7 +47,7 @@ source "amazon-ebs" "aws-windows-ssh" {
   ssh_file_transfer_method    = "sftp"
   user_data_file              = "files/SetupSsh.ps1"
   fast_launch {
-    enable_fast_launch = true
+    enable_fast_launch = false
   }
   snapshot_tags = {
     Name      = "${var.image_name}"
