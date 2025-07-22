@@ -47,7 +47,7 @@ source "amazon-ebs" "aws-windows-ssh" {
   ssh_file_transfer_method    = "sftp"
   user_data_file              = "files/SetupSsh.ps1"
   fast_launch {
-    enable_fast_launch = false
+    enable_fast_launch = true
   }
   snapshot_tags = {
     Name      = "${var.image_name}"
