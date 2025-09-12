@@ -38,7 +38,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 ## Project Conventions
 
 - **Script Placement**: All provisioning scripts are in `files/`, referenced directly in the Packer template.
-- **No Hardcoded Secrets**: Sensitive variables (e.g., AWS credentials, `.pkrvars.hcl` files) are excluded via [.gitignore](http://_vscodecontentref_/0).
+- **No Hardcoded Secrets**: Sensitive variables (e.g., AWS credentials, `.pkrvars.hcl` files) are excluded via [.gitignore](./.gitignore).
 - **OpenSSH Key Handling**: The scheduled task downloads the SSH key at startup from EC2 metadata, storing it in `C:\ProgramData\ssh\administrators_authorized_keys` with correct ACLs.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
 
