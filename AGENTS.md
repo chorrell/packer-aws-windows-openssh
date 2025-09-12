@@ -4,16 +4,16 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 ## Architecture Overview
 
-- **Packer Template**: The main build logic is in [`aws-windows-ssh.pkr.hcl`](../aws-windows-ssh.pkr.hcl), written in HCL2. It defines:
+- **Packer Template**: The main build logic is in [`aws-windows-ssh.pkr.hcl`](./aws-windows-ssh.pkr.hcl), written in HCL2. It defines:
   - The base Windows Server 2022 AMI (auto-discovered via filters)
   - Spot instance usage for cost efficiency
   - SSH as the communicator, with OpenSSH installed via provisioning
   - Fast Launch enabled for improved AMI boot times
 
-- **Provisioning Scripts**: All provisioning logic is in [`files/`](../files/):
-  - [`SetupSsh.ps1`](../files/SetupSsh.ps1): Installs and configures OpenSSH, sets up firewall rules, and schedules a task to fetch the SSH key from EC2 metadata.
-  - [`InstallChoco.ps1`](../files/InstallChoco.ps1): Installs Chocolatey for package management.
-  - [`PrepareImage.ps1`](../files/PrepareImage.ps1): Cleans up keys, ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch.
+- **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
+  - [`SetupSsh.ps1`](./files/SetupSsh.ps1): Installs and configures OpenSSH, sets up firewall rules, and schedules a task to fetch the SSH key from EC2 metadata.
+  - [`InstallChoco.ps1`](./files/InstallChoco.ps1): Installs Chocolatey for package management.
+  - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up keys, ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch.
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](../.github/workflows/) validate Packer templates and run PSScriptAnalyzer on PowerShell scripts.
 
