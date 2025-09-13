@@ -15,17 +15,20 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - [`InstallChoco.ps1`](./files/InstallChoco.ps1): Installs Chocolatey for package management.
   - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up keys, ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch.
 
-- **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](../.github/workflows/) validate Packer templates and run PSScriptAnalyzer on PowerShell scripts.
+- **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/) validate Packer templates and run PSScriptAnalyzer on PowerShell scripts.
 
 ## Developer Workflows
 
 - **Build the AMI**:
   1. Set AWS credentials in your environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`).
   2. Initialize Packer plugins:
+
      ```sh
      packer init .
      ```
+
   3. Build the image:
+  
      ```sh
      packer build aws-windows-ssh.pkr.hcl
      ```
