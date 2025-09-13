@@ -45,6 +45,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
 - **ACLs**: Ensure `administrators_authorized_keys` has only `SYSTEM` and `BUILTIN\Administrators` read permissions, inheritance disabled, and `sshd_config` has `PubkeyAuthentication yes` with proper `Match Group administrators` settings.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
+
 ## Integration Points
 
 - **AWS**: Uses the official Amazon Packer plugin and EC2 metadata for SSH key retrieval.
