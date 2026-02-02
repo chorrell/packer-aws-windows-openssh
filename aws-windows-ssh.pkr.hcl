@@ -42,6 +42,17 @@ source "amazon-ebs" "aws-windows-ssh" {
   ssh_username                = "Administrator"
   ssh_file_transfer_method    = "sftp"
   user_data_file              = "files/SetupSsh.ps1"
+  # This ensures the instace has enough disk space and that
+  # the volume_type is gp3 for better performance
+  launch_block_device_mappings {
+    device_name           = "/dev/sda1" # sda1 is the root device for Windows AMIs
+    volume_size           = 100         # The default is 30GB, which isn't enough
+    volume_type           = "gp3"
+    iops                  = 3000 # Default for gp3
+    throughput            = 125  # Default for gp3
+    encrypted             = true
+    delete_on_termination = true
+  }
   fast_launch {
     enable_fast_launch = true
   }
