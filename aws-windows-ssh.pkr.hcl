@@ -50,7 +50,6 @@ source "amazon-ebs" "aws-windows-ssh" {
     volume_type           = "gp3"
     iops                  = 3000 # Default for gp3
     throughput            = 125  # Default for gp3
-    encrypted             = true
     delete_on_termination = true
   }
   fast_launch {
