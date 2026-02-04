@@ -115,7 +115,7 @@ jobs:
             --key-name "${{ steps.import-key.outputs.key_name }}" \
             --security-group-ids "${{ steps.security-group.outputs.security_group_id }}" \
             --subnet-id "${{ steps.vpc-info.outputs.subnet_id }}" \
-            --metadata-options "HttpTokens=optional,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
+            --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=github-actions-ami-test},{Key=ManagedBy,Value=github-actions}]" \
             --query "Instances[0].InstanceId" \
             --output text \
@@ -178,6 +178,58 @@ jobs:
           echo "❌ SSH connection test failed after $MAX_ATTEMPTS attempts"
           exit 1
 
+      - name: Test IMDSv2 Enforcement
+        run: |
+          echo "Verifying IMDSv2 is properly enforced..."
+          
+          # Test that IMDSv1 is blocked
+          echo "Testing IMDSv1 (should fail)..."
+          ssh test-instance << 'EOF' > /tmp/imdsv1-test.log 2>&1
+          powershell -Command @"
+          try {
+            Invoke-RestMethod -Uri 'http://169.254.169.254/latest/meta-data/instance-id' -TimeoutSec 5 -ErrorAction Stop
+            Write-Host 'ERROR: IMDSv1 should be blocked but succeeded'
+            exit 1
+          } catch {
+            Write-Host 'SUCCESS: IMDSv1 correctly blocked'
+            exit 0
+          }
+          "@
+          EOF
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ IMDSv1 blocking verified"
+          else
+            cat /tmp/imdsv1-test.log
+            echo "❌ IMDSv1 test failed"
+            exit 1
+          fi
+          
+          # Test that IMDSv2 works
+          echo "Testing IMDSv2 (should succeed)..."
+          ssh test-instance << 'EOF' > /tmp/imdsv2-test.log 2>&1
+          powershell -Command @"
+          try {
+            `$token = Invoke-RestMethod -Headers @{'X-aws-ec2-metadata-token-ttl-seconds' = '21600'} -Method PUT -Uri 'http://169.254.169.254/latest/api/token'
+            `$instanceId = Invoke-RestMethod -Headers @{'X-aws-ec2-metadata-token' = `$token} -Uri 'http://169.254.169.254/latest/meta-data/instance-id'
+            Write-Host 'SUCCESS: IMDSv2 working correctly'
+            Write-Host 'Instance ID:' `$instanceId
+            exit 0
+          } catch {
+            Write-Host 'ERROR: IMDSv2 failed'
+            Write-Host `$_
+            exit 1
+          }
+          "@
+          EOF
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ IMDSv2 functionality verified"
+          else
+            cat /tmp/imdsv2-test.log
+            echo "❌ IMDSv2 test failed"
+            exit 1
+          fi
       - name: Cleanup - Terminate Instance
         if: always()
         run: |

@@ -57,6 +57,11 @@ source "amazon-ebs" "aws-windows-ssh" {
     throughput            = 125  # Default for gp3
     delete_on_termination = true
   }
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
   fast_launch {
     enable_fast_launch = var.enable_fast_launch
   }
