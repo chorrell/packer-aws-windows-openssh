@@ -17,6 +17,11 @@ variable "image_name" {
   default = "Windows Server 2022 image with ssh"
 }
 
+variable "enable_fast_launch" {
+  type    = bool
+  default = true
+}
+
 locals { timestamp = regex_replace(timestamp(), "[- TZ:]", "") }
 
 data "amazon-ami" "aws-windows-ssh" {
@@ -37,7 +42,7 @@ source "amazon-ebs" "aws-windows-ssh" {
   associate_public_ip_address = true
   communicator                = "ssh"
   spot_price                  = "auto"
-  spot_instance_types         = ["c7i.large", "c7a.large", "c6i.large", "c6a.large", "c5a.large", "m6a.large", "m5a.large", "m5.large"]
+  spot_instance_types         = ["c8i.xlarge", "c8a.xlarge", "c7i.xlarge", "c7a.xlarge", "c6i.xlarge", "c6a.xlarge", "m8i.xlarge", "m8a.xlarge", "m7i.xlarge", "m7a.xlarge", "m6i.xlarge", "m6a.xlarge"]
   ssh_timeout                 = "10m"
   ssh_username                = "Administrator"
   ssh_file_transfer_method    = "sftp"
@@ -53,7 +58,7 @@ source "amazon-ebs" "aws-windows-ssh" {
     delete_on_termination = true
   }
   fast_launch {
-    enable_fast_launch = true
+    enable_fast_launch = var.enable_fast_launch
   }
   snapshot_tags = {
     Name      = "${var.image_name}"
@@ -79,5 +84,10 @@ build {
 
   provisioner "powershell" {
     script = "files/PrepareImage.ps1"
+  }
+
+  post-processor "manifest" {
+    output = "packer-manifest.json"
+    strip_path = true
   }
 }

@@ -1,0 +1,244 @@
+name: Build and Test AMI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+
+      - name: Initialize Packer
+        run: packer init ./aws-windows-ssh.pkr.hcl
+
+      - name: Validate Packer Template
+        run: packer validate ./aws-windows-ssh.pkr.hcl
+
+      - name: Build AMI with Packer
+        id: build
+        run: |
+          # Build AMI
+          packer build -var "enable_fast_launch=false" ./aws-windows-ssh.pkr.hcl
+          
+          # Extract AMI ID from manifest file
+          AMI_ID=$(jq -r '.builds[-1].artifact_id' packer-manifest.json | cut -d: -f2)
+          echo "ami_id=${AMI_ID}" >> $GITHUB_OUTPUT
+
+      - name: Generate SSH Key Pair
+        id: ssh-key
+        run: |
+          # Generate temporary SSH key pair for testing
+          ssh-keygen -t rsa -b 4096 -f test-key -N "" -C "github-actions-test"
+          echo "public_key=$(cat test-key.pub)" >> $GITHUB_OUTPUT
+          chmod 600 test-key
+
+      - name: Import SSH Public Key to AWS
+        id: import-key
+        run: |
+          KEY_NAME="github-actions-test-$(date +%s)"
+          aws ec2 import-key-pair \
+            --key-name "${KEY_NAME}" \
+            --public-key-material fileb://test-key.pub \
+            --region ${{ env.AWS_REGION }}
+          echo "key_name=${KEY_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Get Default VPC and Subnet
+        id: vpc-info
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=isDefault,Values=true" \
+            --query "Vpcs[0].VpcId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          # Find a subnet in an AZ that supports t3a.xlarge instances
+          # t3a.xlarge is supported in: us-east-1a, us-east-1b, us-east-1c, us-east-1d, us-east-1f
+          SUBNET_ID=$(aws ec2 describe-subnets \
+            --filters "Name=vpc-id,Values=${VPC_ID}" "Name=availability-zone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
+            --query "Subnets[0].SubnetId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          echo "vpc_id=${VPC_ID}" >> $GITHUB_OUTPUT
+          echo "subnet_id=${SUBNET_ID}" >> $GITHUB_OUTPUT
+
+      - name: Create Security Group
+        id: security-group
+        run: |
+          SG_NAME="github-actions-test-$(date +%s)"
+          SG_ID=$(aws ec2 create-security-group \
+            --group-name "${SG_NAME}" \
+            --description "Temporary security group for AMI testing" \
+            --vpc-id "${{ steps.vpc-info.outputs.vpc_id }}" \
+            --query "GroupId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          # Allow SSH from GitHub Actions
+          aws ec2 authorize-security-group-ingress \
+            --group-id "${SG_ID}" \
+            --protocol tcp \
+            --port 22 \
+            --cidr 0.0.0.0/0 \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "security_group_id=${SG_ID}" >> $GITHUB_OUTPUT
+
+      - name: Launch Test Instance
+        id: launch-instance
+        run: |
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id "${{ steps.build.outputs.ami_id }}" \
+            --instance-type t3a.xlarge \
+            --key-name "${{ steps.import-key.outputs.key_name }}" \
+            --security-group-ids "${{ steps.security-group.outputs.security_group_id }}" \
+            --subnet-id "${{ steps.vpc-info.outputs.subnet_id }}" \
+            --metadata-options "HttpTokens=optional,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=github-actions-ami-test},{Key=ManagedBy,Value=github-actions}]" \
+            --query "Instances[0].InstanceId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          echo "instance_id=${INSTANCE_ID}" >> $GITHUB_OUTPUT
+          echo "Launched instance: ${INSTANCE_ID}"
+
+      - name: Wait for Instance to be Running
+        run: |
+          echo "Waiting for instance to be in running state..."
+          aws ec2 wait instance-running \
+            --instance-ids "${{ steps.launch-instance.outputs.instance_id }}" \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Get Instance Public IP
+        id: instance-ip
+        run: |
+          PUBLIC_IP=$(aws ec2 describe-instances \
+            --instance-ids "${{ steps.launch-instance.outputs.instance_id }}" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          echo "public_ip=${PUBLIC_IP}" >> $GITHUB_OUTPUT
+          echo "Instance IP: ${PUBLIC_IP}"
+
+      - name: Test SSH Connection
+        run: |
+          echo "Testing SSH connection to ${{ steps.instance-ip.outputs.public_ip }}"
+          
+          # Configure SSH to skip host key checking for this test
+          mkdir -p ~/.ssh
+          cat >> ~/.ssh/config <<EOF
+          Host test-instance
+            HostName ${{ steps.instance-ip.outputs.public_ip }}
+            User Administrator
+            IdentityFile $(pwd)/test-key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            ConnectTimeout 30
+          EOF
+          
+          # Retry SSH connection with longer wait times if needed
+          MAX_ATTEMPTS=20
+          WAIT_TIME=30
+          
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            echo "SSH attempt $i/$MAX_ATTEMPTS..."
+            if ssh test-instance "echo 'SSH connection successful'" 2>&1; then
+              echo "✅ SSH connection test passed!"
+              exit 0
+            fi
+            if [ $i -lt $MAX_ATTEMPTS ]; then
+              echo "Connection failed, retrying in ${WAIT_TIME} seconds..."
+              sleep $WAIT_TIME
+            fi
+          done
+          
+          echo "❌ SSH connection test failed after $MAX_ATTEMPTS attempts"
+          exit 1
+
+      - name: Cleanup - Terminate Instance
+        if: always()
+        run: |
+          if [ -n "${{ steps.launch-instance.outputs.instance_id }}" ]; then
+            echo "Terminating instance ${{ steps.launch-instance.outputs.instance_id }}..."
+            aws ec2 terminate-instances \
+              --instance-ids "${{ steps.launch-instance.outputs.instance_id }}" \
+              --region ${{ env.AWS_REGION }} || true
+            
+            echo "Waiting for instance to terminate..."
+            aws ec2 wait instance-terminated \
+              --instance-ids "${{ steps.launch-instance.outputs.instance_id }}" \
+              --region ${{ env.AWS_REGION }} || true
+          fi
+
+      - name: Cleanup - Delete Security Group
+        if: always()
+        run: |
+          if [ -n "${{ steps.security-group.outputs.security_group_id }}" ]; then
+            echo "Deleting security group ${{ steps.security-group.outputs.security_group_id }}..."
+            aws ec2 delete-security-group \
+              --group-id "${{ steps.security-group.outputs.security_group_id }}" \
+              --region ${{ env.AWS_REGION }} || true
+          fi
+
+      - name: Cleanup - Delete SSH Key
+        if: always()
+        run: |
+          if [ -n "${{ steps.import-key.outputs.key_name }}" ]; then
+            echo "Deleting SSH key pair ${{ steps.import-key.outputs.key_name }}..."
+            aws ec2 delete-key-pair \
+              --key-name "${{ steps.import-key.outputs.key_name }}" \
+              --region ${{ env.AWS_REGION }} || true
+          fi
+          
+          # Clean up local SSH keys
+          rm -f test-key test-key.pub
+
+      - name: Cleanup - Deregister AMI
+        if: always()
+        run: |
+          if [ -n "${{ steps.build.outputs.ami_id }}" ]; then
+            echo "Deregistering AMI ${{ steps.build.outputs.ami_id }}..."
+            
+            # Get snapshot IDs before deregistering
+            SNAPSHOT_IDS=$(aws ec2 describe-images \
+              --image-ids "${{ steps.build.outputs.ami_id }}" \
+              --query "Images[0].BlockDeviceMappings[*].Ebs.SnapshotId" \
+              --output text \
+              --region ${{ env.AWS_REGION }})
+            
+            # Deregister AMI
+            aws ec2 deregister-image \
+              --image-id "${{ steps.build.outputs.ami_id }}" \
+              --region ${{ env.AWS_REGION }} || true
+            
+            # Delete snapshots
+            for snapshot in ${SNAPSHOT_IDS}; do
+              echo "Deleting snapshot ${snapshot}..."
+              aws ec2 delete-snapshot \
+                --snapshot-id "${snapshot}" \
+                --region ${{ env.AWS_REGION }} || true
+            done
+          fi
