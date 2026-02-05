@@ -27,6 +27,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - Automatically cleans up all test resources (instances, security groups, SSH keys, AMIs, snapshots)
     - Uses AWS OIDC authentication (no static credentials required)
   - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests
+  - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests
 
 ## Developer Workflows
 
@@ -52,6 +53,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - Launch test instances and verify SSH connectivity
     - Test IMDSv2 enforcement (block IMDSv1, verify IMDSv2 works)
     - Lint PowerShell scripts with PSScriptAnalyzer
+    - Lint Markdown files with markdownlint
     - Clean up all test resources
 
 ## Project Conventions
@@ -61,6 +63,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
 - **ACLs**: Ensure `administrators_authorized_keys` has only `SYSTEM` and `BUILTIN\Administrators` read permissions, inheritance disabled, and `sshd_config` has `PubkeyAuthentication yes` with proper `Match Group administrators` settings.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
+- **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests.
 
 ## Integration Points
 
