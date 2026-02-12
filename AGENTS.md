@@ -31,6 +31,17 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 ## Developer Workflows
 
+- **Run Tests Locally**:
+  PowerShell scripts are validated with Pester unit tests. To run tests:
+
+  ```sh
+  # Install Pester (if not already installed)
+  pwsh -Command "Install-Module -Name Pester -Force -SkipPublisherCheck"
+
+  # Run all tests
+  pwsh -Command "Invoke-Pester -Path './tests' -Output Detailed"
+  ```
+
 - **Build the AMI**:
   1. Set AWS credentials in your environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`).
   2. Initialize Packer plugins:
@@ -49,6 +60,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests, workflows will automatically:
+    - Run Pester unit tests for PowerShell scripts
     - Validate and build AMIs with Packer
     - Launch test instances and verify SSH connectivity
     - Test IMDSv2 enforcement (block IMDSv1, verify IMDSv2 works)
