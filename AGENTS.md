@@ -26,6 +26,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly
     - Automatically cleans up all test resources (instances, security groups, SSH keys, AMIs, snapshots)
     - Uses AWS OIDC authentication (no static credentials required)
+    - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
   - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests
   - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests
 
@@ -58,8 +59,9 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD Setup** (for GitHub Actions):
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
+    - **Important**: The OIDC trust policy must use `StringEquals` with a branch restriction (`ref:refs/heads/main`) to follow the principle of least privilege. This prevents unauthorized access from pull requests, feature branches, and forks.
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
-  - On pull requests, workflows will automatically:
+  - On pull requests to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts
     - Validate and build AMIs with Packer
     - Launch test instances and verify SSH connectivity
@@ -82,6 +84,18 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **AWS**: Uses the official Amazon Packer plugin and EC2 metadata for SSH key retrieval.
 - **Chocolatey**: Installed for future extensibility in package management.
 - **Windows Fast Launch**: Enabled for AMI performance.
+
+## Maintenance & Documentation
+
+**AGENTS.md is critical documentation for agents and future maintainers.** It must be kept up-to-date whenever:
+
+- **Workflow behavior changes**: Updates to GitHub Actions workflows, job conditions, or CI/CD logic
+- **Security policy modifications**: Changes to OIDC trust policies, credential handling, or permission scopes
+- **Architecture changes**: Modifications to Packer configuration, provisioning scripts, or resource structure
+- **New tools or integrations**: Adding new dependencies, AWS services, or external tools
+- **CI/CD setup requirements**: Updates to setup guides or configuration procedures
+
+When making changes to the project, always review AGENTS.md and update it alongside your code changes. This ensures consistency and helps agents understand the system correctly.
 
 ## References
 
