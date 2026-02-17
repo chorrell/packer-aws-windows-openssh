@@ -59,7 +59,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD Setup** (for GitHub Actions):
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
-    - **Important**: The OIDC trust policy must use `StringEquals` with a branch restriction (`ref:refs/heads/main`) to follow the principle of least privilege. This prevents unauthorized access from pull requests, feature branches, and forks.
+    - **Important**: The OIDC trust policy must restrict access to your specific repository using `repo:ORG/REPO:*` pattern to prevent unauthorized access from forks and other repositories.
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts
