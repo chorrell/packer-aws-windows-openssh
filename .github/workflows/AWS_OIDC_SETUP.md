@@ -88,7 +88,8 @@ AWS credentials in GitHub Secrets because:
 ### 3. Update the Role Trust Policy
 
 Edit the trust policy of the role you just created to restrict access to
-your specific repository:
+your specific repository and `main` branch only (following the principle of
+least privilege):
 
 ```json
 {
@@ -102,10 +103,8 @@ your specific repository:
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-        },
-        "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:YOUR_GITHUB_ORG/packer-aws-windows-openssh:*"
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_GITHUB_ORG/packer-aws-windows-openssh:ref:refs/heads/main"
         }
       }
     }
@@ -117,6 +116,12 @@ Replace:
 
 - `YOUR_ACCOUNT_ID` with your AWS account ID
 - `YOUR_GITHUB_ORG` with your GitHub organization or username
+
+**Note**: This trust policy uses `StringEquals` for the `sub` condition to
+restrict credentials to the `main` branch only. This prevents pull requests,
+feature branches, and forked repositories from assuming the role, improving
+security. For additional protection, GitHub Actions will skip the
+`build-and-test` workflow for Dependabot PRs which lack secret access.
 
 ### 4. Add the Role ARN to GitHub Secrets
 
