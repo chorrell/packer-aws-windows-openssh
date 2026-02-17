@@ -88,8 +88,7 @@ AWS credentials in GitHub Secrets because:
 ### 3. Update the Role Trust Policy
 
 Edit the trust policy of the role you just created to restrict access to
-your specific repository, allowing only the `main` branch and pull requests
-targeting `main` (following the principle of least privilege):
+your specific repository (following the principle of least privilege):
 
 ```json
 {
@@ -106,10 +105,7 @@ targeting `main` (following the principle of least privilege):
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": [
-            "repo:YOUR_GITHUB_ORG/packer-aws-windows-openssh:ref:refs/heads/main",
-            "repo:YOUR_GITHUB_ORG/packer-aws-windows-openssh:pull_request/*"
-          ]
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_GITHUB_ORG/packer-aws-windows-openssh:*"
         }
       }
     }
@@ -122,15 +118,11 @@ Replace:
 - `YOUR_ACCOUNT_ID` with your AWS account ID
 - `YOUR_GITHUB_ORG` with your GitHub organization or username
 
-**Note**: This trust policy restricts access to:
-
-- Direct pushes to the `main` branch (`ref:refs/heads/main`)
-- Pull requests targeting `main` (`pull_request/*`)
-
-This prevents feature branches and forked repositories from assuming the role,
-improving security while allowing both main branch workflows and PR testing.
-Additionally, GitHub Actions will skip the `build-and-test` workflow for
-Dependabot PRs which lack secret access.
+**Note**: This trust policy restricts access to your specific repository only.
+The wildcard (`*`) allows all branches and pull requests within your repository,
+preventing other repositories and forks from assuming the role. Additionally,
+GitHub Actions will skip the `build-and-test` workflow for Dependabot PRs
+which lack secret access.
 
 ### 4. Add the Role ARN to GitHub Secrets
 
