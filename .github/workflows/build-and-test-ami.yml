@@ -4,6 +4,10 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'aws-windows-ssh.pkr.hcl'
+      - 'files/**'
+      - '.github/workflows/build-and-test-ami.yml'
 
 env:
   PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
