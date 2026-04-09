@@ -2,6 +2,9 @@ name: Run PSPSScriptAnalyzer on PowerShell Scripts
 
 on:
   pull_request:
+    paths:
+      - 'files/**'
+      - '.github/workflows/PSScriptAnalyzer.yml'
 
 jobs:
   PSScriptAnalyzer:
