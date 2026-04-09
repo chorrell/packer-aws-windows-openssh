@@ -27,6 +27,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - Automatically cleans up all test resources (instances, security groups, SSH keys, AMIs, snapshots)
     - Uses AWS OIDC authentication (no static credentials required)
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
+    - **Path filtering**: Only triggers on changes to `aws-windows-ssh.pkr.hcl`, `files/**`, or `.github/workflows/build-and-test-ami.yml`. PRs that only modify docs, tests, or other workflows do not trigger this expensive workflow.
   - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests
   - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests
 
