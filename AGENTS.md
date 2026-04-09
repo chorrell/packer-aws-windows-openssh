@@ -28,8 +28,9 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - Uses AWS OIDC authentication (no static credentials required)
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
     - **Path filtering**: Only triggers on changes to `aws-windows-ssh.pkr.hcl`, `files/**`, or `.github/workflows/build-and-test-ami.yml`. PRs that only modify docs, tests, or other workflows do not trigger this expensive workflow.
-  - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests
-  - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests
+  - [`test.yml`](./.github/workflows/test.yml): Runs Pester unit tests for PowerShell scripts on `windows-latest`. Triggers on PRs that change `files/**`, `tests/**`, or the workflow file, and also on pushes to `main` that change `files/**` or `tests/**`.
+  - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests that change `files/**` or the workflow file itself.
+  - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests that change `**/*.md` or the workflow file itself.
 
 ## Developer Workflows
 
@@ -78,7 +79,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
 - **ACLs**: Ensure `administrators_authorized_keys` has only `SYSTEM` and `BUILTIN\Administrators` read permissions, inheritance disabled, and `sshd_config` has `PubkeyAuthentication yes` with proper `Match Group administrators` settings.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
-- **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests.
+- **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests. A pre-commit hook (`.pre-commit-config.yaml`) runs `markdownlint-cli2-docker` locally before each commit to catch issues early.
 
 ## Integration Points
 
