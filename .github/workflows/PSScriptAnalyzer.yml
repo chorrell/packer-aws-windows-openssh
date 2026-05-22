@@ -6,6 +6,9 @@ on:
       - 'files/**'
       - '.github/workflows/PSScriptAnalyzer.yml'
 
+permissions:
+  contents: read
+
 jobs:
   PSScriptAnalyzer:
     runs-on: ubuntu-latest
