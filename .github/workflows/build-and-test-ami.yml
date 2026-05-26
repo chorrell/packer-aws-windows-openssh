@@ -17,6 +17,10 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -36,6 +40,14 @@ jobs:
       - name: Setup Packer
         uses: hashicorp/setup-packer@c3d53c525d422944e50ee27b840746d6522b08de # v3.2.0
 
+      - name: Cache Packer plugins
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.config/packer/plugins
+          key: ${{ runner.os }}-packer-${{ hashFiles('aws-windows-ssh.pkr.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-packer-
+
       - name: Initialize Packer
         run: packer init ./aws-windows-ssh.pkr.hcl
 
@@ -43,6 +55,8 @@ jobs:
         run: packer validate ./aws-windows-ssh.pkr.hcl
 
       - name: Build AMI with Packer
+        env:
+          PKR_VAR_workflow_run_id: ${{ github.run_id }}
         run: |
           packer build -var "enable_fast_launch=false" ./aws-windows-ssh.pkr.hcl
           AMI_ID=$(jq -r '.builds[-1].artifact_id' packer-manifest.json | cut -d: -f2)
@@ -56,9 +70,15 @@ jobs:
       - name: Import SSH Public Key to AWS
         run: |
           KEY_NAME="github-actions-test-$(date +%s)"
-          aws ec2 import-key-pair \
+          KEY_PAIR_ID=$(aws ec2 import-key-pair \
             --key-name "${KEY_NAME}" \
             --public-key-material fileb://test-key.pub \
+            --query "KeyPairId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          aws ec2 create-tags \
+            --resources "${KEY_PAIR_ID}" \
+            --tags "Key=WorkflowRunId,Value=${{ github.run_id }}" \
             --region ${{ env.AWS_REGION }}
           echo "KEY_NAME=${KEY_NAME}" >> "$GITHUB_ENV"
 
@@ -99,6 +119,11 @@ jobs:
             --cidr 0.0.0.0/0 \
             --region ${{ env.AWS_REGION }}
 
+          aws ec2 create-tags \
+            --resources "${SG_ID}" \
+            --tags "Key=WorkflowRunId,Value=${{ github.run_id }}" \
+            --region ${{ env.AWS_REGION }}
+
           echo "SECURITY_GROUP_ID=${SG_ID}" >> "$GITHUB_ENV"
 
       - name: Launch Test Instance
@@ -110,7 +135,7 @@ jobs:
             --security-group-ids "${SECURITY_GROUP_ID}" \
             --subnet-id "${SUBNET_ID}" \
             --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
-            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=github-actions-ami-test},{Key=ManagedBy,Value=github-actions}]" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=github-actions-ami-test},{Key=ManagedBy,Value=github-actions},{Key=WorkflowRunId,Value=${{ github.run_id }}}]" \
             --query "Instances[0].InstanceId" \
             --output text \
             --region ${{ env.AWS_REGION }})
@@ -122,6 +147,13 @@ jobs:
         run: |
           echo "Waiting for instance to be in running state..."
           aws ec2 wait instance-running \
+            --instance-ids "${INSTANCE_ID}" \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Instance Status OK
+        run: |
+          echo "Waiting for instance status checks to pass..."
+          aws ec2 wait instance-status-ok \
             --instance-ids "${INSTANCE_ID}" \
             --region ${{ env.AWS_REGION }}
 
@@ -285,3 +317,74 @@ jobs:
                 --region ${{ env.AWS_REGION }} || true
             done
           fi
+
+      - name: Cleanup - Orphan Sweep
+        if: always()
+        run: |
+          RUN_ID="${{ github.run_id }}"
+          REGION="${{ env.AWS_REGION }}"
+
+          # Terminate any instances tagged with this run (covers Packer build instance
+          # + our test instance if the env-var-guarded step above was skipped)
+          INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:WorkflowRunId,Values=${RUN_ID}" \
+                      "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query "Reservations[].Instances[].InstanceId" \
+            --output text --region "$REGION")
+          if [ -n "$INSTANCES" ]; then
+            echo "Orphan sweep: terminating instances ${INSTANCES}..."
+            # shellcheck disable=SC2086
+            aws ec2 terminate-instances --instance-ids $INSTANCES --region "$REGION" || true
+            # shellcheck disable=SC2086
+            aws ec2 wait instance-terminated --instance-ids $INSTANCES --region "$REGION" || true
+          fi
+
+          # Deregister any AMIs tagged with this run and delete their snapshots
+          AMIS=$(aws ec2 describe-images --owners self \
+            --filters "Name=tag:WorkflowRunId,Values=${RUN_ID}" \
+            --query "Images[].ImageId" --output text --region "$REGION")
+          for ami in $AMIS; do
+            echo "Orphan sweep: deregistering AMI ${ami}..."
+            SNAPS=$(aws ec2 describe-images --image-ids "$ami" \
+              --query "Images[0].BlockDeviceMappings[*].Ebs.SnapshotId" \
+              --output text --region "$REGION")
+            aws ec2 deregister-image --image-id "$ami" --region "$REGION" || true
+            for snap in $SNAPS; do
+              aws ec2 delete-snapshot --snapshot-id "$snap" --region "$REGION" || true
+            done
+          done
+
+          # Delete tagged security groups and key pairs
+          SGS=$(aws ec2 describe-security-groups \
+            --filters "Name=tag:WorkflowRunId,Values=${RUN_ID}" \
+            --query "SecurityGroups[].GroupId" --output text --region "$REGION")
+          for sg in $SGS; do
+            echo "Orphan sweep: deleting security group ${sg}..."
+            aws ec2 delete-security-group --group-id "$sg" --region "$REGION" || true
+          done
+
+          KPS=$(aws ec2 describe-key-pairs \
+            --filters "Name=tag:WorkflowRunId,Values=${RUN_ID}" \
+            --query "KeyPairs[].KeyName" --output text --region "$REGION")
+          for kp in $KPS; do
+            echo "Orphan sweep: deleting key pair ${kp}..."
+            aws ec2 delete-key-pair --key-name "$kp" --region "$REGION" || true
+          done
+
+          # Best-effort cleanup of Packer's internal packer_* temp resources.
+          # delete-security-group fails harmlessly if the SG is still attached to
+          # a running instance; deleting a keypair from EC2 does not affect
+          # already-launched instances.
+          PACKER_SGS=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=packer_*" \
+            --query "SecurityGroups[].GroupId" --output text --region "$REGION")
+          for sg in $PACKER_SGS; do
+            aws ec2 delete-security-group --group-id "$sg" --region "$REGION" 2>/dev/null || true
+          done
+
+          PACKER_KPS=$(aws ec2 describe-key-pairs \
+            --filters "Name=key-name,Values=packer_*" \
+            --query "KeyPairs[].KeyName" --output text --region "$REGION")
+          for kp in $PACKER_KPS; do
+            aws ec2 delete-key-pair --key-name "$kp" --region "$REGION" 2>/dev/null || true
+          done

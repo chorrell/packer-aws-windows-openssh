@@ -15,6 +15,11 @@ on:
 
 permissions:
   contents: read
+  checks: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -25,10 +30,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Cache PowerShell modules
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~\Documents\PowerShell\Modules
+          key: ${{ runner.os }}-psmodules-pester-5
+
       - name: Install Pester
         shell: pwsh
         run: |
-          Install-Module -Name Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck
+          if (-not (Get-Module -ListAvailable -Name Pester | Where-Object { [version]$_.Version -ge [version]'5.0' })) {
+            Install-Module -Name Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          }
 
       - name: Run Tests
         shell: pwsh
@@ -36,6 +49,9 @@ jobs:
           $config = New-PesterConfiguration
           $config.Run.Path = './tests'
           $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'testResults.xml'
+          $config.TestResult.OutputFormat = 'JUnitXml'
 
           $results = Invoke-Pester -Configuration $config
 
@@ -48,4 +64,12 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pester-results
-          path: ./tests/
+          path: testResults.xml
+
+      - name: Publish Test Results
+        if: always()
+        uses: dorny/test-reporter@a6ddd83ac95ff4586f5d3aceeb314d9a1841db95 # v3.0.0
+        with:
+          name: Pester Tests
+          path: testResults.xml
+          reporter: java-junit

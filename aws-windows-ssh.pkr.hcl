@@ -22,6 +22,11 @@ variable "enable_fast_launch" {
   default = true
 }
 
+variable "workflow_run_id" {
+  type    = string
+  default = ""
+}
+
 locals { timestamp = regex_replace(timestamp(), "[- TZ:]", "") }
 
 data "amazon-ami" "aws-windows-ssh" {
@@ -65,14 +70,29 @@ source "amazon-ebs" "aws-windows-ssh" {
   fast_launch {
     enable_fast_launch = var.enable_fast_launch
   }
+  run_tags = {
+    Name          = "packer-build-${var.ami_name_prefix}"
+    WorkflowRunId = var.workflow_run_id
+  }
+
+  run_volume_tags = {
+    WorkflowRunId = var.workflow_run_id
+  }
+
+  spot_tags = {
+    WorkflowRunId = var.workflow_run_id
+  }
+
   snapshot_tags = {
-    Name      = "${var.image_name}"
-    BuildTime = "${local.timestamp}"
+    Name          = "${var.image_name}"
+    BuildTime     = "${local.timestamp}"
+    WorkflowRunId = var.workflow_run_id
   }
 
   tags = {
-    Name      = "${var.image_name}"
-    BuildTime = "${local.timestamp}"
+    Name          = "${var.image_name}"
+    BuildTime     = "${local.timestamp}"
+    WorkflowRunId = var.workflow_run_id
   }
 }
 
