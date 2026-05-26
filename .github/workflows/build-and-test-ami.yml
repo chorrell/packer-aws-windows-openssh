@@ -46,7 +46,7 @@ jobs:
         run: |
           packer build -var "enable_fast_launch=false" ./aws-windows-ssh.pkr.hcl
           AMI_ID=$(jq -r '.builds[-1].artifact_id' packer-manifest.json | cut -d: -f2)
-          echo "AMI_ID=${AMI_ID}" >> $GITHUB_ENV
+          echo "AMI_ID=${AMI_ID}" >> "$GITHUB_ENV"
 
       - name: Generate SSH Key Pair
         run: |
@@ -60,7 +60,7 @@ jobs:
             --key-name "${KEY_NAME}" \
             --public-key-material fileb://test-key.pub \
             --region ${{ env.AWS_REGION }}
-          echo "KEY_NAME=${KEY_NAME}" >> $GITHUB_ENV
+          echo "KEY_NAME=${KEY_NAME}" >> "$GITHUB_ENV"
 
       - name: Get Default VPC and Subnet
         run: |
@@ -69,7 +69,7 @@ jobs:
             --query "Vpcs[0].VpcId" \
             --output text \
             --region ${{ env.AWS_REGION }})
-          
+
           # Find a subnet in an AZ that supports t3a.xlarge instances
           # t3a.xlarge is supported in: us-east-1a, us-east-1b, us-east-1c, us-east-1d, us-east-1f
           SUBNET_ID=$(aws ec2 describe-subnets \
@@ -77,9 +77,9 @@ jobs:
             --query "Subnets[0].SubnetId" \
             --output text \
             --region ${{ env.AWS_REGION }})
-          
-          echo "VPC_ID=${VPC_ID}" >> $GITHUB_ENV
-          echo "SUBNET_ID=${SUBNET_ID}" >> $GITHUB_ENV
+
+          echo "VPC_ID=${VPC_ID}" >> "$GITHUB_ENV"
+          echo "SUBNET_ID=${SUBNET_ID}" >> "$GITHUB_ENV"
 
       - name: Create Security Group
         run: |
@@ -91,15 +91,15 @@ jobs:
             --query "GroupId" \
             --output text \
             --region ${{ env.AWS_REGION }})
-          
+
           aws ec2 authorize-security-group-ingress \
             --group-id "${SG_ID}" \
             --protocol tcp \
             --port 22 \
             --cidr 0.0.0.0/0 \
             --region ${{ env.AWS_REGION }}
-          
-          echo "SECURITY_GROUP_ID=${SG_ID}" >> $GITHUB_ENV
+
+          echo "SECURITY_GROUP_ID=${SG_ID}" >> "$GITHUB_ENV"
 
       - name: Launch Test Instance
         run: |
@@ -114,8 +114,8 @@ jobs:
             --query "Instances[0].InstanceId" \
             --output text \
             --region ${{ env.AWS_REGION }})
-          
-          echo "INSTANCE_ID=${INSTANCE_ID}" >> $GITHUB_ENV
+
+          echo "INSTANCE_ID=${INSTANCE_ID}" >> "$GITHUB_ENV"
           echo "Launched instance: ${INSTANCE_ID}"
 
       - name: Wait for Instance to be Running
@@ -132,14 +132,14 @@ jobs:
             --query "Reservations[0].Instances[0].PublicIpAddress" \
             --output text \
             --region ${{ env.AWS_REGION }})
-          
-          echo "PUBLIC_IP=${PUBLIC_IP}" >> $GITHUB_ENV
+
+          echo "PUBLIC_IP=${PUBLIC_IP}" >> "$GITHUB_ENV"
           echo "Instance IP: ${PUBLIC_IP}"
 
       - name: Test SSH Connection
         run: |
           echo "Testing SSH connection to ${PUBLIC_IP}"
-          
+
           # Configure SSH to skip host key checking for this test
           mkdir -p ~/.ssh
           cat >> ~/.ssh/config <<EOF
@@ -151,33 +151,33 @@ jobs:
             UserKnownHostsFile /dev/null
             ConnectTimeout 30
           EOF
-          
+
           # Retry SSH connection with longer wait times if needed
           MAX_ATTEMPTS=20
           WAIT_TIME=30
-          
-          for i in $(seq 1 $MAX_ATTEMPTS); do
+
+          for i in $(seq 1 "$MAX_ATTEMPTS"); do
             echo "SSH attempt $i/$MAX_ATTEMPTS..."
             if ssh test-instance "echo 'SSH connection successful'" 2>&1; then
               echo "✅ SSH connection test passed!"
               exit 0
             fi
-            if [ $i -lt $MAX_ATTEMPTS ]; then
+            if [ "$i" -lt "$MAX_ATTEMPTS" ]; then
               echo "Connection failed, retrying in ${WAIT_TIME} seconds..."
-              sleep $WAIT_TIME
+              sleep "$WAIT_TIME"
             fi
           done
-          
+
           echo "❌ SSH connection test failed after $MAX_ATTEMPTS attempts"
           exit 1
 
       - name: Test IMDSv2 Enforcement
         run: |
           echo "Verifying IMDSv2 is properly enforced..."
-          
+
           # Test that IMDSv1 is blocked
           echo "Testing IMDSv1 (should fail)..."
-          ssh test-instance << 'EOF' > /tmp/imdsv1-test.log 2>&1
+          if ssh test-instance << 'EOF' > /tmp/imdsv1-test.log 2>&1
           powershell -Command @"
           try {
             Invoke-RestMethod -Uri 'http://169.254.169.254/latest/meta-data/instance-id' -TimeoutSec 5 -ErrorAction Stop
@@ -189,18 +189,17 @@ jobs:
           }
           "@
           EOF
-          
-          if [ $? -eq 0 ]; then
+          then
             echo "✅ IMDSv1 blocking verified"
           else
             cat /tmp/imdsv1-test.log
             echo "❌ IMDSv1 test failed"
             exit 1
           fi
-          
+
           # Test that IMDSv2 works
           echo "Testing IMDSv2 (should succeed)..."
-          ssh test-instance << 'EOF' > /tmp/imdsv2-test.log 2>&1
+          if ssh test-instance << 'EOF' > /tmp/imdsv2-test.log 2>&1
           powershell -Command @"
           try {
             `$token = Invoke-RestMethod -Headers @{'X-aws-ec2-metadata-token-ttl-seconds' = '21600'} -Method PUT -Uri 'http://169.254.169.254/latest/api/token'
@@ -215,8 +214,7 @@ jobs:
           }
           "@
           EOF
-          
-          if [ $? -eq 0 ]; then
+          then
             echo "✅ IMDSv2 functionality verified"
           else
             cat /tmp/imdsv2-test.log
@@ -231,7 +229,7 @@ jobs:
             aws ec2 terminate-instances \
               --instance-ids "${INSTANCE_ID}" \
               --region ${{ env.AWS_REGION }} || true
-            
+
             echo "Waiting for instance to terminate..."
             aws ec2 wait instance-terminated \
               --instance-ids "${INSTANCE_ID}" \
@@ -257,7 +255,7 @@ jobs:
               --key-name "${KEY_NAME}" \
               --region ${{ env.AWS_REGION }} || true
           fi
-          
+
           # Clean up local SSH keys
           rm -f test-key test-key.pub
 
@@ -266,19 +264,19 @@ jobs:
         run: |
           if [ -n "${AMI_ID}" ]; then
             echo "Deregistering AMI ${AMI_ID}..."
-            
+
             # Get snapshot IDs before deregistering
             SNAPSHOT_IDS=$(aws ec2 describe-images \
               --image-ids "${AMI_ID}" \
               --query "Images[0].BlockDeviceMappings[*].Ebs.SnapshotId" \
               --output text \
               --region ${{ env.AWS_REGION }})
-            
+
             # Deregister AMI
             aws ec2 deregister-image \
               --image-id "${AMI_ID}" \
               --region ${{ env.AWS_REGION }} || true
-            
+
             # Delete snapshots
             for snapshot in ${SNAPSHOT_IDS}; do
               echo "Deleting snapshot ${snapshot}..."

@@ -54,7 +54,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
      ```
 
   3. Build the image:
-  
+
      ```sh
      packer build aws-windows-ssh.pkr.hcl
      ```
@@ -79,7 +79,8 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
 - **ACLs**: Ensure `administrators_authorized_keys` has only `SYSTEM` and `BUILTIN\Administrators` read permissions, inheritance disabled, and `sshd_config` has `PubkeyAuthentication yes` with proper `Match Group administrators` settings.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
-- **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests. A pre-commit hook (`.pre-commit-config.yaml`) runs `markdownlint-cli2-docker` locally before each commit to catch issues early.
+- **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests.
+- **Pre-commit hooks** (`.pre-commit-config.yaml`): Run locally before each commit to catch issues early. Hooks cover: `markdownlint-cli2-docker` (Markdown), `packer_fmt` (HCL formatting), `actionlint` (GitHub Actions workflow syntax and shellcheck), `zizmor` (Actions security), `gitleaks` (secret detection), and standard hygiene (`trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-merge-conflict`, `check-added-large-files`, `mixed-line-ending`).
 
 ## Integration Points
 
