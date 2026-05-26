@@ -3,3 +3,37 @@ repos:
     rev: v0.22.1
     hooks:
       - id: markdownlint-cli2-docker
+
+  - repo: https://github.com/cisagov/pre-commit-packer
+    rev: v0.3.1
+    hooks:
+      - id: packer_fmt
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.9
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.9.0
+    hooks:
+      - id: zizmor
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.23.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^files/.*\.ps1$
+      - id: end-of-file-fixer
+        exclude: ^files/.*\.ps1$
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: mixed-line-ending
+        args: ["--fix=no"]
+        exclude: ^files/.*\.ps1$
