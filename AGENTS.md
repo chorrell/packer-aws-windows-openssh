@@ -11,6 +11,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - IMDSv2 enforcement via `metadata_options` block (`http_tokens = "required"`)
   - 100GB gp3 root volume (vs 30GB default) via `launch_block_device_mappings` for adequate disk space and performance
   - Fast Launch configurable via `enable_fast_launch` variable (default: enabled)
+  - `workflow_run_id` variable (passed as `PKR_VAR_workflow_run_id` from CI) applied via `run_tags`, `run_volume_tags`, `spot_tags`, `tags`, and `snapshot_tags` to enable tag-based orphan cleanup on workflow cancellation
   - Manifest post-processor that outputs AMI IDs to `packer-manifest.json` for CI/CD automation
 
 - **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
@@ -20,16 +21,17 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests:
-    - Validates and builds AMIs using Packer
-    - Launches test instances from the built AMI
+    - Validates and builds AMIs using Packer (plugins cached keyed on template hash)
+    - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
+    - Launches test instances from the built AMI; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Tests SSH connectivity with automatic retry logic (20 attempts, 30-second intervals)
     - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly
-    - Automatically cleans up all test resources (instances, security groups, SSH keys, AMIs, snapshots)
+    - Automatically cleans up all test resources via granular `if: always()` steps plus a final **Orphan Sweep** step that queries by `WorkflowRunId` tag, ensuring cleanup even on mid-build cancellation
     - Uses AWS OIDC authentication (no static credentials required)
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
     - **Path filtering**: Only triggers on changes to `aws-windows-ssh.pkr.hcl`, `files/**`, or `.github/workflows/build-and-test-ami.yml`. PRs that only modify docs, tests, or other workflows do not trigger this expensive workflow.
-  - [`test.yml`](./.github/workflows/test.yml): Runs Pester unit tests for PowerShell scripts on `windows-latest`. Triggers on PRs that change `files/**`, `tests/**`, or the workflow file, and also on pushes to `main` that change `files/**` or `tests/**`.
-  - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests that change `files/**` or the workflow file itself.
+  - [`test.yml`](./.github/workflows/test.yml): Runs Pester unit tests for PowerShell scripts on `windows-latest`. Pester module is cached; install is skipped on cache hit to avoid PSGallery dependency. Emits JUnit XML and publishes a **Pester Tests** GitHub Check via `dorny/test-reporter`. Triggers on PRs that change `files/**`, `tests/**`, or the workflow file, and also on pushes to `main` that change `files/**` or `tests/**`.
+  - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests that change `files/**` or the workflow file itself. PSScriptAnalyzer 1.24.0 is pinned and cached; install is skipped on cache hit.
   - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests that change `**/*.md` or the workflow file itself.
 
 ## Developer Workflows
@@ -64,13 +66,14 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - **Important**: The OIDC trust policy must restrict access to your specific repository using `repo:ORG/REPO:*` pattern to prevent unauthorized access from forks and other repositories.
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests to `main`, workflows will automatically:
-    - Run Pester unit tests for PowerShell scripts
-    - Validate and build AMIs with Packer
+    - Run Pester unit tests for PowerShell scripts (JUnit XML results uploaded as `pester-results` artifact; results also published as a GitHub Check)
+    - Validate and build AMIs with Packer (plugins cached between runs)
     - Launch test instances and verify SSH connectivity
     - Test IMDSv2 enforcement (block IMDSv1, verify IMDSv2 works)
-    - Lint PowerShell scripts with PSScriptAnalyzer
+    - Lint PowerShell scripts with PSScriptAnalyzer (PSScriptAnalyzer module cached)
     - Lint Markdown files with markdownlint
     - Clean up all test resources
+  - **Concurrency**: All workflows use `cancel-in-progress: true` to cancel superseded runs on rapid PR pushes. The AMI build workflow uses a tag-based orphan sweep (`WorkflowRunId=${{ github.run_id }}`) stamped on every Packer and workflow-created resource, with a final `Cleanup - Orphan Sweep` step (`if: always()`) that terminates/deregisters/deletes by that tag so mid-build cancellation leaves no leaked AWS resources.
 
 ## Project Conventions
 

@@ -45,6 +45,7 @@ AWS credentials in GitHub Secrets because:
         "ec2:TerminateInstances",
         "ec2:CreateFleet",
         "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
         "ec2:DescribeInstanceTypeOfferings",
         "ec2:DescribeImages",
         "ec2:CreateImage",
