@@ -5,6 +5,12 @@ on:
     paths:
       - '**/*.md'
       - '.github/workflows/markdownlint.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.md'
+      - '.github/workflows/markdownlint.yml'
 
 permissions:
   contents: read
