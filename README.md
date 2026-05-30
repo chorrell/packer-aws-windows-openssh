@@ -1,5 +1,9 @@
 # Windows AMI with ssh
 
+[![Build and Test AMI](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami.yml)
+[![Test PowerShell Scripts](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/test.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/test.yml)
+[![PSScriptAnalyzer](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/PSScriptAnalyzer.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/PSScriptAnalyzer.yml)
+
 This repository contains a Packer template and supporting files for creating an AWS Windows AMI with OpenSSH. The code in this repository is inspired by this [blog post](https://operator-error.com/2018/04/16/windows-amis-with-even/) and accompanying [code](https://github.com/jen20/packer-aws-windows-ssh).
 
 This is an updated implementation of `packer-aws-windows-ssh` with the following changes:

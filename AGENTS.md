@@ -20,7 +20,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up SSH keys with retry logic (5 attempts with 5-second delays to handle file locks), ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch.
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
-  - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests:
+  - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
     - Validates and builds AMIs using Packer (plugins cached keyed on template hash)
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
     - Launches test instances from the built AMI; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
@@ -31,8 +31,8 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
     - **Path filtering**: Only triggers on changes to `aws-windows-ssh.pkr.hcl`, `files/**`, or `.github/workflows/build-and-test-ami.yml`. PRs that only modify docs, tests, or other workflows do not trigger this expensive workflow.
   - [`test.yml`](./.github/workflows/test.yml): Runs Pester unit tests for PowerShell scripts on `windows-latest`. Pester module is cached; install is skipped on cache hit to avoid PSGallery dependency. Emits JUnit XML and publishes a **Pester Tests** GitHub Check via `dorny/test-reporter`. Triggers on PRs that change `files/**`, `tests/**`, or the workflow file, and also on pushes to `main` that change `files/**` or `tests/**`.
-  - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests that change `files/**` or the workflow file itself. PSScriptAnalyzer 1.24.0 is pinned and cached; install is skipped on cache hit.
-  - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests that change `**/*.md` or the workflow file itself.
+  - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests and pushes to `main` that change `files/**` or the workflow file itself. PSScriptAnalyzer 1.24.0 is pinned and cached; install is skipped on cache hit.
+  - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests and pushes to `main` that change `**/*.md` or the workflow file itself.
 
 ## Developer Workflows
 
@@ -65,7 +65,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
     - **Important**: The OIDC trust policy must restrict access to your specific repository using `repo:ORG/REPO:*` pattern to prevent unauthorized access from forks and other repositories.
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
-  - On pull requests to `main`, workflows will automatically:
+  - On pull requests to `main` and on pushes to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts (JUnit XML results uploaded as `pester-results` artifact; results also published as a GitHub Check)
     - Validate and build AMIs with Packer (plugins cached between runs)
     - Launch test instances and verify SSH connectivity

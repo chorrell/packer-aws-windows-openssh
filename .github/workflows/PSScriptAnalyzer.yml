@@ -5,6 +5,12 @@ on:
     paths:
       - 'files/**'
       - '.github/workflows/PSScriptAnalyzer.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'files/**'
+      - '.github/workflows/PSScriptAnalyzer.yml'
 
 permissions:
   contents: read
