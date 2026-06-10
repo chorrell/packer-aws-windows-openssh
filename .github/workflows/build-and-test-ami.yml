@@ -97,16 +97,17 @@ jobs:
             --output text \
             --region ${{ env.AWS_REGION }})
 
-          # Find a subnet in an AZ that supports t3a.xlarge instances
+          # Collect all subnets in AZs that support t3a.xlarge so the launch step
+          # can try each one in turn if an AZ has InsufficientInstanceCapacity.
           # t3a.xlarge is supported in: us-east-1a, us-east-1b, us-east-1c, us-east-1d, us-east-1f
-          SUBNET_ID=$(aws ec2 describe-subnets \
+          SUBNET_IDS=$(aws ec2 describe-subnets \
             --filters "Name=vpc-id,Values=${VPC_ID}" "Name=availability-zone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
-            --query "Subnets[0].SubnetId" \
+            --query "Subnets[*].SubnetId" \
             --output text \
             --region ${{ env.AWS_REGION }})
 
           echo "VPC_ID=${VPC_ID}" >> "$GITHUB_ENV"
-          echo "SUBNET_ID=${SUBNET_ID}" >> "$GITHUB_ENV"
+          echo "SUBNET_IDS=${SUBNET_IDS}" >> "$GITHUB_ENV"
 
       - name: Create Security Group
         run: |
@@ -135,17 +136,31 @@ jobs:
 
       - name: Launch Test Instance
         run: |
-          INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id "${AMI_ID}" \
-            --instance-type t3a.xlarge \
-            --key-name "${KEY_NAME}" \
-            --security-group-ids "${SECURITY_GROUP_ID}" \
-            --subnet-id "${SUBNET_ID}" \
-            --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
-            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=github-actions-ami-test},{Key=ManagedBy,Value=github-actions},{Key=WorkflowRunId,Value=${{ github.run_id }}}]" \
-            --query "Instances[0].InstanceId" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
+          INSTANCE_ID=""
+          for SUBNET_ID in $SUBNET_IDS; do
+            echo "Trying subnet ${SUBNET_ID}..."
+            if INSTANCE_ID=$(aws ec2 run-instances \
+              --image-id "${AMI_ID}" \
+              --instance-type t3a.xlarge \
+              --key-name "${KEY_NAME}" \
+              --security-group-ids "${SECURITY_GROUP_ID}" \
+              --subnet-id "${SUBNET_ID}" \
+              --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
+              --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=github-actions-ami-test},{Key=ManagedBy,Value=github-actions},{Key=WorkflowRunId,Value=${{ github.run_id }}}]" \
+              --query "Instances[0].InstanceId" \
+              --output text \
+              --region ${{ env.AWS_REGION }} 2>&1); then
+              break
+            else
+              echo "Failed in subnet ${SUBNET_ID}: ${INSTANCE_ID}"
+              INSTANCE_ID=""
+            fi
+          done
+
+          if [ -z "${INSTANCE_ID}" ]; then
+            echo "Failed to launch instance in any available subnet"
+            exit 1
+          fi
 
           echo "INSTANCE_ID=${INSTANCE_ID}" >> "$GITHUB_ENV"
           echo "Launched instance: ${INSTANCE_ID}"
