@@ -108,7 +108,8 @@ build {
   }
 
   provisioner "powershell" {
-    script = "files/PrepareImage.ps1"
+    script           = "files/PrepareImage.ps1"
+    valid_exit_codes = [0, 2300218]
   }
 
   post-processor "manifest" {
