@@ -21,9 +21,9 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
-    - Validates and builds AMIs using Packer (plugins cached keyed on template hash)
+    - Validates and builds AMIs using Packer (plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
-    - Launches test instances from the built AMI; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
+    - Launches `t3a.xlarge` test instances from the built AMI; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Tests SSH connectivity with automatic retry logic (20 attempts, 30-second intervals)
     - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly
     - Automatically cleans up all test resources via granular `if: always()` steps plus a final **Orphan Sweep** step that queries by `WorkflowRunId` tag, ensuring cleanup even on mid-build cancellation
@@ -80,7 +80,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **Script Placement**: All provisioning scripts are in `files/`, referenced directly in the Packer template.
 - **No Hardcoded Secrets**: Sensitive variables (e.g., AWS credentials, `.pkrvars.hcl` files) are excluded via [.gitignore](./.gitignore).
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
-- **ACLs**: Ensure `administrators_authorized_keys` has only `SYSTEM` and `BUILTIN\Administrators` read permissions, inheritance disabled, and `sshd_config` has `PubkeyAuthentication yes` with proper `Match Group administrators` settings.
+- **ACLs**: The download-key.ps1 script sets `administrators_authorized_keys` with inheritance disabled (`/inheritance:r`) and grants Full (`F`) access to `Administrators` and `SYSTEM` via `icacls.exe`.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
 - **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests.
 - **Pre-commit hooks** (`.pre-commit-config.yaml`): Run locally before each commit to catch issues early. Hooks cover: `markdownlint-cli2-docker` (Markdown), `packer_fmt` (HCL formatting), `actionlint` (GitHub Actions workflow syntax and shellcheck), `zizmor` (Actions security), `gitleaks` (secret detection), and standard hygiene (`trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-merge-conflict`, `check-added-large-files`, `mixed-line-ending`).
