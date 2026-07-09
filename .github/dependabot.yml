@@ -6,6 +6,13 @@ updates:
       interval: "daily"
       time: "09:30"
       timezone: "America/Toronto"
+    groups:
+      github-official:
+        patterns:
+          - "actions/*"
+        update-types:
+          - "minor"
+          - "patch"
     pull-request-branch-name:
       separator: "/"
     commit-message:
@@ -13,6 +20,7 @@ updates:
       include: "scope"
     cooldown:
       default-days: 7
+
   - package-ecosystem: "pre-commit"
     directory: "/"
     schedule:
