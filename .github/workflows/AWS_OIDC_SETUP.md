@@ -167,7 +167,7 @@ To verify the setup is working:
 Each workflow run will:
 
 - Build a Windows AMI (spot instance for ~15-30 minutes)
-- Launch a test instance (t3.medium for ~5 minutes)
+- Launch a test instance (t3a.xlarge for ~5 minutes)
 - Delete all resources after testing
 
 Estimated cost per run: **$0.50 - $1.00**
