@@ -17,13 +17,13 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
   - [`SetupSsh.ps1`](./files/SetupSsh.ps1): Installs and configures OpenSSH, sets up firewall rules, and schedules a task to fetch the SSH key from EC2 metadata using IMDSv2 (retrieves a session token with 6-hour TTL via `PUT /latest/api/token`, then uses token to fetch SSH key).
   - [`InstallChoco.ps1`](./files/InstallChoco.ps1): Installs Chocolatey for package management.
-  - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up SSH keys with retry logic (5 attempts with 5-second delays to handle file locks), ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch.
+  - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up SSH keys with retry logic (5 attempts with 5-second delays to handle file locks), ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch. The `PrepareImage.ps1` provisioner accepts `valid_exit_codes = [0, 2300218]`, since `ec2launch sysprep` shuts down the instance and drops the SSH connection before the script can return a normal exit code; Packer surfaces this disconnect as exit code `2300218`, which is treated as success.
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
     - Validates and builds AMIs using Packer (plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
-    - Launches `t3a.xlarge` test instances from the built AMI; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
+    - Launches `t3a.xlarge` test instances from the built AMI, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Tests SSH connectivity with automatic retry logic (20 attempts, 30-second intervals)
     - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly
     - Automatically cleans up all test resources via granular `if: always()` steps plus a final **Orphan Sweep** step that queries by `WorkflowRunId` tag, ensuring cleanup even on mid-build cancellation
