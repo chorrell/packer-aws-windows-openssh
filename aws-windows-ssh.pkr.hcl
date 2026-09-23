@@ -62,6 +62,9 @@ source "amazon-ebs" "aws-windows-ssh" {
     throughput            = 125  # Default for gp3
     delete_on_termination = true
   }
+  # Register the AMI so instances launched from it require IMDSv2 by default;
+  # metadata_options below only applies to the build instance
+  imds_support = "v2.0"
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"

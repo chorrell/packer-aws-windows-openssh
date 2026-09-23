@@ -24,6 +24,11 @@ while ($retryCount -lt $maxRetries -and -not $deleted) {
   }
 }
 
+# Remove host keys generated during the build so every instance launched from
+# the AMI gets unique host keys; sshd regenerates missing keys on first start
+Write-Output "Removing SSH host keys"
+Remove-Item -Force -Path (Join-Path $env:ProgramData 'ssh\ssh_host_*')
+
 # Make sure task is enabled
 Enable-ScheduledTask "DownloadKey"
 

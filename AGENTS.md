@@ -8,7 +8,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - The base Windows Server 2022 AMI (auto-discovered via filters)
   - Spot instance usage for cost efficiency (c8i/c8a/c7i/c7a/c6i/c6a/m8i/m8a/m7i/m7a/m6i/m6a instance types)
   - SSH as the communicator, with OpenSSH installed via provisioning
-  - IMDSv2 enforcement via `metadata_options` block (`http_tokens = "required"`)
+  - IMDSv2 enforcement via `metadata_options` block (`http_tokens = "required"`) on the build instance, and `imds_support = "v2.0"` so instances launched from the AMI require IMDSv2 by default
   - 100GB gp3 root volume (vs 30GB default) via `launch_block_device_mappings` for adequate disk space and performance
   - Fast Launch configurable via `enable_fast_launch` variable (default: enabled)
   - `workflow_run_id` variable (passed as `PKR_VAR_workflow_run_id` from CI) applied via `run_tags`, `run_volume_tags`, `spot_tags`, `tags`, and `snapshot_tags` to enable tag-based orphan cleanup on workflow cancellation
@@ -17,7 +17,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
   - [`SetupSsh.ps1`](./files/SetupSsh.ps1): Installs and configures OpenSSH, sets up firewall rules, and schedules a task to fetch the SSH key from EC2 metadata using IMDSv2 (retrieves a session token with 6-hour TTL via `PUT /latest/api/token`, then uses token to fetch SSH key).
   - [`InstallChoco.ps1`](./files/InstallChoco.ps1): Installs Chocolatey for package management.
-  - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up SSH keys with retry logic (5 attempts with 5-second delays to handle file locks), ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch. The `PrepareImage.ps1` provisioner accepts `valid_exit_codes = [0, 2300218]`, since `ec2launch sysprep` shuts down the instance and drops the SSH connection before the script can return a normal exit code; Packer surfaces this disconnect as exit code `2300218`, which is treated as success.
+  - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up SSH keys with retry logic (5 attempts with 5-second delays to handle file locks), removes the build-time SSH host keys (`ssh_host_*`) so each launched instance generates unique host keys on first sshd start, ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch. The `PrepareImage.ps1` provisioner accepts `valid_exit_codes = [0, 2300218]`, since `ec2launch sysprep` shuts down the instance and drops the SSH connection before the script can return a normal exit code; Packer surfaces this disconnect as exit code `2300218`, which is treated as success.
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
@@ -25,7 +25,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
     - Launches `t3a.xlarge` test instances from the built AMI, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Tests SSH connectivity with automatic retry logic (20 attempts, 30-second intervals)
-    - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly
+    - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly; the test instance is launched without `--metadata-options` so this exercises the AMI's `imds_support` default
     - Automatically cleans up all test resources via granular `if: always()` steps plus a final **Orphan Sweep** step that queries by `WorkflowRunId` tag, ensuring cleanup even on mid-build cancellation
     - Uses AWS OIDC authentication (no static credentials required)
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
