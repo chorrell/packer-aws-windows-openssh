@@ -292,11 +292,13 @@ jobs:
           # as an encoded command to avoid quoting a PowerShell script through ssh.
           SCRIPT=$(cat <<'PS'
           $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
           $trusted = @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')
           $writeRights = [System.Security.AccessControl.FileSystemRights]'Write, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership'
           $paths = @((Join-Path $env:ProgramData 'ssh'), (Join-Path $env:ProgramData 'ssh\download-key.ps1'))
           $violations = foreach ($path in $paths) {
-            icacls.exe $path
+            # Show the ACL in the log without adding it to $violations
+            icacls.exe $path | Out-Host
             (Get-Acl -Path $path).Access | Where-Object {
               $_.AccessControlType -eq 'Allow' -and
               ($_.FileSystemRights -band $writeRights) -and
