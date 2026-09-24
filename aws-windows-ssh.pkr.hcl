@@ -45,8 +45,11 @@ source "amazon-ebs" "aws-windows-ssh" {
   ami_description             = "${var.image_name}"
   ami_virtualization_type     = "hvm"
   associate_public_ip_address = true
-  communicator                = "ssh"
-  spot_price                  = "auto"
+  # Restrict the temporary security group's SSH ingress to the public IP of
+  # the host running Packer instead of 0.0.0.0/0
+  temporary_security_group_source_public_ip = true
+  communicator                              = "ssh"
+  spot_price                                = "auto"
   # Prefer pools with low interruption risk; the default (lowest-price) picks
   # the cheapest pool, which is the most likely to be reclaimed mid-build
   spot_allocation_strategy = "price-capacity-optimized"

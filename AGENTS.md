@@ -6,12 +6,13 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **Packer Template**: The main build logic is in [`aws-windows-ssh.pkr.hcl`](./aws-windows-ssh.pkr.hcl), written in HCL2. It defines:
   - The base Windows Server 2022 AMI (auto-discovered via filters)
+  - `temporary_security_group_source_public_ip = true` restricts the build instance's temporary SSH security group to the public IP of the host running Packer (instead of `0.0.0.0/0`)
   - Spot instance usage for cost efficiency (c8i/c8a/c7i/c7a/c6i/c6a/m8i/m8a/m7i/m7a/m6i/m6a instance types) with `spot_allocation_strategy = "price-capacity-optimized"` to reduce mid-build spot interruptions
   - SSH as the communicator, with OpenSSH installed via provisioning
   - IMDSv2 enforcement via `metadata_options` block (`http_tokens = "required"`) on the build instance, and `imds_support = "v2.0"` so instances launched from the AMI require IMDSv2 by default
   - 100GB gp3 root volume (vs 30GB default) via `launch_block_device_mappings` for adequate disk space and performance, with `encrypted = true` so the build volume, AMI, and snapshots are encrypted with the default `aws/ebs` key (no `encrypt_boot` copy step; note `aws/ebs`-encrypted AMIs cannot be shared cross-account). Because the base AMI is unencrypted, the encrypted volume's snapshot is a full copy rather than incremental, so AMI creation takes ~30+ minutes; `aws_polling` (30s × 120 = 60 minutes) raises Packer's default 30-minute AMI wait
   - Fast Launch configurable via `enable_fast_launch` variable (default: enabled)
-  - `workflow_run_id` variable (passed as `PKR_VAR_workflow_run_id` from CI) applied via `run_tags`, `run_volume_tags`, `spot_tags`, `tags`, and `snapshot_tags` to enable tag-based orphan cleanup on workflow cancellation
+  - `workflow_run_id` variable (passed as `PKR_VAR_workflow_run_id` from CI) applied via `run_tags` (which Packer also applies to its temporary `packer_*` security group and key pair), `run_volume_tags`, `spot_tags`, `tags`, and `snapshot_tags` to enable tag-based orphan cleanup on workflow cancellation
   - Manifest post-processor that outputs AMI IDs to `packer-manifest.json` for CI/CD automation
 
 - **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
@@ -22,11 +23,11 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
     - Validates and builds AMIs using Packer (plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
-    - Launches `t3a.xlarge` test instances from the built AMI, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
+    - Launches `t3a.xlarge` test instances from the built AMI in a temporary security group that only allows SSH from the runner's public IP, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Verifies all AMI snapshots are encrypted
     - Tests SSH connectivity with automatic retry logic (20 attempts, 30-second intervals)
     - Verifies sshd only offers public key authentication
-    - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is blocked and IMDSv2 works correctly; the test instance is launched without `--metadata-options` so this exercises the AMI's `imds_support` default
+    - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is rejected with HTTP 401 (any other error fails the test) and IMDSv2 works correctly; the test instance is launched without `--metadata-options` so this exercises the AMI's `imds_support` default
     - Automatically cleans up all test resources via granular `if: always()` steps plus a final **Orphan Sweep** step that queries by `WorkflowRunId` tag, ensuring cleanup even on mid-build cancellation
     - Uses AWS OIDC authentication (no static credentials required)
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
