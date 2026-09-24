@@ -124,7 +124,9 @@ Then run a `main` build (`gh run rerun <run-id>` on the latest `main` run of
 pull request, or push to one), and check CloudTrail for denied calls:
 
 ```bash
+# CloudTrail lookups are regional; use the region the workflows build in
 aws cloudtrail lookup-events \
+  --region us-east-1 \
   --lookup-attributes AttributeKey=Username,AttributeValue=GitHubActions \
   --query "Events[].CloudTrailEvent" --output json |
   jq -r '.[] | fromjson | select(.errorCode // "" | test("Unauthorized|AccessDenied")) | "\(.eventTime) \(.eventName) \(.errorCode)"'
@@ -215,7 +217,9 @@ Consider limiting when this workflow runs if cost is a concern.
 4. **Block Public Sharing**: Block public sharing of AMIs and snapshots in
    each region you use (`aws ec2 enable-image-block-public-access
    --image-block-public-access-state block-new-sharing` and
-   `aws ec2 enable-snapshot-block-public-access --state block-all-sharing`)
+   `aws ec2 enable-snapshot-block-public-access --state block-all-sharing`).
+   These settings are per region, so run them with `--region` for each one.
+   The IAM commands in this guide are global and don't need a region.
 5. **Branch Protection**: Consider limiting this workflow to specific
    branches or requiring manual approval
 6. **External Contributor Approval**: Configure GitHub Actions settings
