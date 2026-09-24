@@ -80,6 +80,17 @@
       }
     },
     {
+      "Sid": "LaunchFromEncryptedBaseImages",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*::image/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Purpose": "encrypted-base-ami"
+        }
+      }
+    },
+    {
       "Sid": "LaunchSupportingResources",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",

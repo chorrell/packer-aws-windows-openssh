@@ -162,6 +162,49 @@ ran. It needs no permissions beyond the policy above. To preview what it would
 delete, run it manually from the **Actions** tab (dry run is the default for
 manual runs).
 
+### 6. Encrypted Base AMI Refresh Role
+
+The `refresh-base-ami.yml` workflow keeps an encrypted copy of the latest
+Amazon Windows Server 2022 base AMI in the account (tagged
+`Purpose=encrypted-base-ami`). It runs weekly and can be started manually from
+the **Actions** tab.
+
+It uses a **separate role** because `ec2:CopyImage` can't be reliably limited
+to Amazon-owned source images with IAM conditions. If the CI role could copy
+images, a pull request branch could copy a private AMI in the account, tag it
+as a base image, and launch it with its own key. The refresh role:
+
+- trusts only `repo:ORG/packer-aws-windows-openssh:ref:refs/heads/main`, so
+  pull requests and other branches can't assume it
+  ([`iam/base-ami-refresh-trust-policy.json`](../../iam/base-ami-refresh-trust-policy.json))
+- can only copy images and deregister or delete `Purpose=encrypted-base-ami`
+  images and snapshots
+  ([`iam/base-ami-refresh-policy.json`](../../iam/base-ami-refresh-policy.json))
+
+The CI role can launch `Purpose=encrypted-base-ami` images but can't copy
+images or add that tag to an existing image.
+
+Replace `YOUR_ACCOUNT_ID` and `YOUR_GITHUB_ORG` in the trust policy (for
+example, with `sed` into a new file), then:
+
+```bash
+aws iam create-policy \
+  --policy-name GitHubActions-BaseAmiRefresh-Policy \
+  --policy-document file://iam/base-ami-refresh-policy.json
+
+aws iam create-role \
+  --role-name GitHubActions-BaseAmiRefresh \
+  --assume-role-policy-document file://base-ami-refresh-trust-policy.json
+
+aws iam attach-role-policy \
+  --role-name GitHubActions-BaseAmiRefresh \
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/GitHubActions-BaseAmiRefresh-Policy
+```
+
+Add the role ARN as the `AWS_BASE_AMI_ROLE_ARN` repository secret, then run
+the workflow once. The first copy is a full encrypted snapshot and takes about
+30–40 minutes.
+
 ## Verification
 
 To verify the setup is working:

@@ -36,6 +36,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests and pushes to `main` that change `files/**` or the workflow file itself. PSScriptAnalyzer 1.24.0 is pinned and cached; install is skipped on cache hit.
   - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests and pushes to `main` that change `**/*.md` or the workflow file itself.
   - [`cleanup-orphans.yml`](./.github/workflows/cleanup-orphans.yml): Daily scheduled (and manual `workflow_dispatch`, dry run by default) fallback cleanup for `build-and-test-ami.yml` runs whose own cleanup never ran (runner lost, job timeout, forced cancellation). Deletes instances, AMIs and snapshots, detached volumes, launch templates, security groups, and key pairs tagged `WorkflowRunId` only when the GitHub API reports that run as `completed`; if the run can't be found, only resources older than 24 hours are deleted. Resources with an empty `WorkflowRunId` (local builds) are never touched. Uses the same `AWS_ROLE_ARN` OIDC role plus `actions: read`.
+  - [`refresh-base-ami.yml`](./.github/workflows/refresh-base-ami.yml): Weekly scheduled (and manual) job that copies the latest Amazon `Windows_Server-2022-English-Full-Base-*` AMI into the account as an encrypted AMI (`aws/ebs` key) tagged `Purpose=encrypted-base-ami`, `SourceAmiId`, and `SourceAmiName`, skipping the copy if one already exists for the current source AMI, then keeps the newest 2 copies. Uses a separate `AWS_BASE_AMI_ROLE_ARN` role that trusts only `main` and is the only role with `ec2:CopyImage` (IAM can't reliably restrict `CopyImage` to Amazon-owned sources, so the CI role must not have it). Base AMIs deliberately have no `WorkflowRunId` tag so the orphan cleanups never delete them.
 
 ## Developer Workflows
 
@@ -67,7 +68,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **CI/CD Setup** (for GitHub Actions):
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
     - **Important**: The OIDC trust policy ([`iam/github-actions-trust-policy.json`](./iam/github-actions-trust-policy.json)) only accepts the `repo:ORG/REPO:ref:refs/heads/main` and `repo:ORG/REPO:pull_request` subjects (no wildcard), so forks, other repositories, and other branches can't assume the role.
-    - **Least privilege**: The permissions policy ([`iam/github-actions-policy.json`](./iam/github-actions-policy.json)) requires a non-empty `WorkflowRunId` tag on resources the role creates (tag on create) and on existing resources it modifies or deletes, limits `RunInstances` to Amazon-owned or workflow-tagged images, and grants no volume create/attach, snapshot attribute, or KMS permissions. Any new workflow step that creates an AWS resource must tag it with `WorkflowRunId` via `--tag-specifications` at creation, not with a later `create-tags` call. Keep the policy in sync with the actions the workflows use (CloudTrail `Username=GitHubActions` shows them).
+    - **Least privilege**: The permissions policy ([`iam/github-actions-policy.json`](./iam/github-actions-policy.json)) requires a non-empty `WorkflowRunId` tag on resources the role creates (tag on create) and on existing resources it modifies or deletes, limits `RunInstances` to Amazon-owned, workflow-tagged, or `Purpose=encrypted-base-ami` images, and grants no volume create/attach, snapshot attribute, or KMS permissions. Any new workflow step that creates an AWS resource must tag it with `WorkflowRunId` via `--tag-specifications` at creation, not with a later `create-tags` call. Keep the policy in sync with the actions the workflows use (CloudTrail `Username=GitHubActions` shows them).
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests to `main` and on pushes to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts (JUnit XML results uploaded as `pester-results` artifact; results also published as a GitHub Check)
@@ -113,6 +114,6 @@ When making changes to the project, always review AGENTS.md and update it alongs
 - Provisioning scripts: `files/`
 - CI/CD workflows: `.github/workflows/`
 - AWS OIDC setup guide: `.github/workflows/AWS_OIDC_SETUP.md`
-- IAM policies for the CI role: `iam/`
+- IAM policies for the CI role and the base AMI refresh role: `iam/`
 - AMI manifest output: `packer-manifest.json` (generated during builds)
 - Usage and rationale: `README.md`

@@ -1,0 +1,48 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeImages",
+        "ec2:DescribeSnapshots"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CopyBaseImage",
+      "Effect": "Allow",
+      "Action": "ec2:CopyImage",
+      "Resource": [
+        "arn:aws:ec2:*::image/*",
+        "arn:aws:ec2:*::snapshot/*"
+      ]
+    },
+    {
+      "Sid": "TagOnCopy",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": "CopyImage"
+        }
+      }
+    },
+    {
+      "Sid": "PruneOldBaseImages",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeregisterImage",
+        "ec2:DeleteSnapshot"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Purpose": "encrypted-base-ami"
+        }
+      }
+    }
+  ]
+}

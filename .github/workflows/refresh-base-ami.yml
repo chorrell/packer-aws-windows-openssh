@@ -1,0 +1,94 @@
+name: Refresh Encrypted Base AMI
+
+# Keeps an encrypted copy of the latest Amazon Windows Server 2022 base AMI in
+# this account. Builds launched from an encrypted base share snapshot lineage
+# with it, so the AMI snapshot is incremental instead of a full copy.
+# Uses a separate role (AWS_BASE_AMI_ROLE_ARN) that trusts only main, so the
+# CI role never needs ec2:CopyImage.
+
+on:
+  schedule:
+    # AWS publishes new Windows AMIs a few days after Patch Tuesday; check weekly
+    - cron: '23 7 * * 3'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  SOURCE_NAME_FILTER: Windows_Server-2022-English-Full-Base-*
+  # Number of encrypted base AMIs to keep (older ones are deregistered)
+  KEEP: 2
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_BASE_AMI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Copy latest base AMI (encrypted)
+        run: |
+          read -r SOURCE_ID SOURCE_NAME < <(aws ec2 describe-images --region "${AWS_REGION}" \
+            --owners amazon --filters "Name=name,Values=${SOURCE_NAME_FILTER}" \
+            --query 'sort_by(Images,&CreationDate)[-1].[ImageId,Name]' --output text)
+          echo "Latest Amazon base AMI: ${SOURCE_ID} (${SOURCE_NAME})"
+
+          EXISTING=$(aws ec2 describe-images --region "${AWS_REGION}" --owners self \
+            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=tag:SourceAmiId,Values=${SOURCE_ID}" \
+            --query 'Images[0].[ImageId,State]' --output text)
+          if [ "${EXISTING}" != "None" ] && [ -n "${EXISTING}" ]; then
+            read -r IMAGE_ID STATE <<<"${EXISTING}"
+            echo "Encrypted copy already exists: ${IMAGE_ID} (${STATE})"
+          else
+            TAGS="{Key=Purpose,Value=encrypted-base-ami},{Key=SourceAmiId,Value=${SOURCE_ID}},{Key=SourceAmiName,Value=${SOURCE_NAME}}"
+            IMAGE_ID=$(aws ec2 copy-image --region "${AWS_REGION}" \
+              --source-region "${AWS_REGION}" --source-image-id "${SOURCE_ID}" \
+              --name "encrypted-${SOURCE_NAME}" \
+              --description "Encrypted copy of ${SOURCE_NAME} (${SOURCE_ID})" \
+              --encrypted \
+              --tag-specifications "ResourceType=image,Tags=[${TAGS}]" "ResourceType=snapshot,Tags=[${TAGS}]" \
+              --query ImageId --output text)
+            echo "Started encrypted copy: ${IMAGE_ID}"
+          fi
+
+          # A full encrypted copy takes ~30-40 minutes; the default waiter gives up after 10
+          for _ in $(seq 1 180); do
+            STATE=$(aws ec2 describe-images --region "${AWS_REGION}" --image-ids "${IMAGE_ID}" \
+              --query 'Images[0].State' --output text)
+            case "${STATE}" in
+              available) echo "✅ ${IMAGE_ID} is available"; break ;;
+              failed|error|invalid|deregistered) echo "❌ ${IMAGE_ID} is ${STATE}"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          if [ "${STATE}" != "available" ]; then
+            echo "❌ Timed out waiting for ${IMAGE_ID} (state: ${STATE})"
+            exit 1
+          fi
+
+      - name: Prune old encrypted base AMIs
+        run: |
+          # Newest first; keep the newest $KEEP available copies
+          mapfile -t OLD < <(aws ec2 describe-images --region "${AWS_REGION}" --owners self \
+            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=state,Values=available" \
+            --query 'reverse(sort_by(Images,&CreationDate))[].ImageId' --output text | tr '\t' '\n' | tail -n +"$((KEEP + 1))")
+          for ami in "${OLD[@]}"; do
+            [ -n "${ami}" ] || continue
+            SNAPS=$(aws ec2 describe-images --region "${AWS_REGION}" --image-ids "${ami}" \
+              --query 'Images[0].BlockDeviceMappings[*].Ebs.SnapshotId' --output text)
+            echo "Deregistering old base AMI ${ami}"
+            aws ec2 deregister-image --region "${AWS_REGION}" --image-id "${ami}"
+            for snap in ${SNAPS}; do
+              aws ec2 delete-snapshot --region "${AWS_REGION}" --snapshot-id "${snap}"
+            done
+          done
