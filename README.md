@@ -13,7 +13,6 @@ This is an updated implementation of `packer-aws-windows-ssh` with the following
 - OpenSSH is installed with `Add-WindowsCapability` per <https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows>
 - The code for downloading the ssh key is somewhat simplified and saves it to `$env:ProgramData\ssh\administrators_authorized_keys`
 - Sysprep is run via the newer [EC2launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2launch.html)
-- [Chocolatey](https://chocolatey.org) is installed for package management
 - The template enables [Fast Launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/win-ami-config-fast-launch.html) for the AMI (see `enable_fast_launch = true`)
 
 ## Usage
@@ -44,3 +43,25 @@ Now build the image:
 ```bash
 packer build aws-windows-ssh.pkr.hcl
 ```
+
+## Customizing the image
+
+The image intentionally includes only what's needed for SSH access. To add your own software or configuration, add a provisioner to the `build` block in `aws-windows-ssh.pkr.hcl`, before the `PrepareImage.ps1` provisioner. `PrepareImage.ps1` must run last because it removes build-time SSH keys and runs Sysprep.
+
+For example, to install a pinned version of [Chocolatey](https://chocolatey.org) and a pinned package:
+
+```hcl
+provisioner "powershell" {
+  # The Chocolatey install script installs the version in chocolateyVersion
+  # instead of the latest release
+  environment_vars = ["chocolateyVersion=2.7.4"]
+  inline = [
+    "Set-ExecutionPolicy Bypass -Scope Process -Force",
+    "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072",
+    "Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))",
+    "choco install git --version=2.55.0.5 -y",
+  ]
+}
+```
+
+Anything installed this way is baked into every instance launched from the AMI, so pin versions as shown above. Pinning `chocolateyVersion` controls which Chocolatey release is installed, but `install.ps1` itself is always fetched fresh. To guard against changes to it, download it, compare its SHA-256 hash to a known value, and only then run it.

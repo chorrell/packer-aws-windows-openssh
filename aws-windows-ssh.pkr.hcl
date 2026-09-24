@@ -105,14 +105,7 @@ source "amazon-ebs" "aws-windows-ssh" {
 build {
   sources = ["source.amazon-ebs.aws-windows-ssh"]
 
-  provisioner "powershell" {
-    script = "files/InstallChoco.ps1"
-  }
-
-  provisioner "windows-restart" {
-    max_retries = 3
-  }
-
+  # Add custom provisioners here; PrepareImage.ps1 must stay last since it runs Sysprep
   provisioner "powershell" {
     script           = "files/PrepareImage.ps1"
     valid_exit_codes = [0, 2300218]

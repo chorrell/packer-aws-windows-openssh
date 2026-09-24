@@ -16,7 +16,6 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
   - [`SetupSsh.ps1`](./files/SetupSsh.ps1): Installs and configures OpenSSH, sets up firewall rules, and schedules a task to fetch the SSH key from EC2 metadata using IMDSv2 (retrieves a session token with 6-hour TTL via `PUT /latest/api/token`, then uses token to fetch SSH key).
-  - [`InstallChoco.ps1`](./files/InstallChoco.ps1): Installs Chocolatey for package management.
   - [`PrepareImage.ps1`](./files/PrepareImage.ps1): Cleans up SSH keys with retry logic (5 attempts with 5-second delays to handle file locks), removes the build-time SSH host keys (`ssh_host_*`) so each launched instance generates unique host keys on first sshd start, ensures scheduled tasks are enabled, and runs Sysprep via EC2Launch. The `PrepareImage.ps1` provisioner accepts `valid_exit_codes = [0, 2300218]`, since `ec2launch sysprep` shuts down the instance and drops the SSH connection before the script can return a normal exit code; Packer surfaces this disconnect as exit code `2300218`, which is treated as success.
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
@@ -78,6 +77,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 ## Project Conventions
 
 - **Script Placement**: All provisioning scripts are in `files/`, referenced directly in the Packer template.
+- **Minimal Image**: The image includes only what is needed for SSH access (no package manager). Custom provisioners go before `PrepareImage.ps1`, which must remain the last provisioner because it runs Sysprep; see "Customizing the image" in `README.md`.
 - **No Hardcoded Secrets**: Sensitive variables (e.g., AWS credentials, `.pkrvars.hcl` files) are excluded via [.gitignore](./.gitignore).
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
 - **ACLs**: The download-key.ps1 script sets `administrators_authorized_keys` with inheritance disabled (`/inheritance:r`) and grants Full (`F`) access to `Administrators` and `SYSTEM` via `icacls.exe`.
@@ -88,7 +88,6 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 ## Integration Points
 
 - **AWS**: Uses the official Amazon Packer plugin and EC2 metadata for SSH key retrieval.
-- **Chocolatey**: Installed for future extensibility in package management.
 - **Windows Fast Launch**: Enabled for AMI performance.
 
 ## Maintenance & Documentation
