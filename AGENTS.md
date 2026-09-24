@@ -66,7 +66,8 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD Setup** (for GitHub Actions):
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
-    - **Important**: The OIDC trust policy must restrict access to your specific repository using `repo:ORG/REPO:*` pattern to prevent unauthorized access from forks and other repositories.
+    - **Important**: The OIDC trust policy ([`iam/github-actions-trust-policy.json`](./iam/github-actions-trust-policy.json)) only accepts the `repo:ORG/REPO:ref:refs/heads/main` and `repo:ORG/REPO:pull_request` subjects (no wildcard), so forks, other repositories, and other branches can't assume the role.
+    - **Least privilege**: The permissions policy ([`iam/github-actions-policy.json`](./iam/github-actions-policy.json)) requires a non-empty `WorkflowRunId` tag on resources the role creates (tag on create) and on existing resources it modifies or deletes, limits `RunInstances` to Amazon-owned or workflow-tagged images, and grants no volume create/attach, snapshot attribute, or KMS permissions. Any new workflow step that creates an AWS resource must tag it with `WorkflowRunId` via `--tag-specifications` at creation, not with a later `create-tags` call. Keep the policy in sync with the actions the workflows use (CloudTrail `Username=GitHubActions` shows them).
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests to `main` and on pushes to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts (JUnit XML results uploaded as `pester-results` artifact; results also published as a GitHub Check)
@@ -112,5 +113,6 @@ When making changes to the project, always review AGENTS.md and update it alongs
 - Provisioning scripts: `files/`
 - CI/CD workflows: `.github/workflows/`
 - AWS OIDC setup guide: `.github/workflows/AWS_OIDC_SETUP.md`
+- IAM policies for the CI role: `iam/`
 - AMI manifest output: `packer-manifest.json` (generated during builds)
 - Usage and rationale: `README.md`
