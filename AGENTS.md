@@ -5,7 +5,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 ## Architecture Overview
 
 - **Packer Template**: The main build logic is in [`aws-windows-ssh.pkr.hcl`](./aws-windows-ssh.pkr.hcl), written in HCL2. It defines:
-  - The base Windows Server 2022 AMI (auto-discovered via filters)
+  - The base Windows Server 2022 AMI (auto-discovered via filters), chosen by the `source_ami_owner` (default `amazon`) and `source_ami_name` variables. CI sets `source_ami_owner=self` and `source_ami_name=encrypted-Windows_Server-2022-English-Full-Base-*` to build from the encrypted copy maintained by `refresh-base-ami.yml`, which keeps the AMI snapshot incremental
   - `temporary_security_group_source_public_ip = true` restricts the build instance's temporary SSH security group to the public IP of the host running Packer (instead of `0.0.0.0/0`)
   - Spot instance usage for cost efficiency (c8i/c8a/c7i/c7a/c6i/c6a/m8i/m8a/m7i/m7a/m6i/m6a instance types) with `spot_allocation_strategy = "price-capacity-optimized"` to reduce mid-build spot interruptions
   - SSH as the communicator, with OpenSSH installed via provisioning
@@ -21,6 +21,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
+    - Checks that an encrypted base AMI (`Purpose=encrypted-base-ami`) exists, failing with instructions to run `refresh-base-ami.yml` if not, and warns if it's a copy of an older Amazon AMI than the latest
     - Validates and builds AMIs using Packer (plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
     - Launches `t3a.xlarge` test instances from the built AMI in a temporary security group that only allows SSH from the runner's public IP, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness

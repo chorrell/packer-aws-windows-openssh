@@ -50,14 +50,34 @@ packer build aws-windows-ssh.pkr.hcl
 
 The build instance's root volume sets `encrypted = true` in `launch_block_device_mappings`, so the AMI and its snapshots are encrypted with the account's default `aws/ebs` KMS key. This doesn't depend on the account's [EBS encryption by default](https://docs.aws.amazon.com/ebs/latest/userguide/encryption-by-default.html) setting, and it avoids `encrypt_boot`, which creates an intermediate unencrypted AMI and copies it (requiring `ec2:CopyImage`).
 
-Encryption makes AMI creation noticeably slower. The Windows base AMI published by AWS is unencrypted, so the encrypted build volume shares no snapshot history with it. As a result, the AMI's snapshot is a full copy of every block in use (roughly 25–30 GB for Windows Server 2022) rather than an incremental snapshot of the changes the build made. Expect the "Waiting for AMI to become ready" step to take 30 minutes or more, compared with about 5 minutes for an unencrypted build.
+Encryption can make AMI creation much slower. The Windows base AMI published by AWS is unencrypted, so an encrypted build volume launched from it shares no snapshot history with it. As a result, the AMI's snapshot is a full copy of every block in use (roughly 25–30 GB for Windows Server 2022) rather than an incremental snapshot of the changes the build made. Expect the "Waiting for AMI to become ready" step to take 30 minutes or more, compared with about 5 minutes for an unencrypted build.
 
-Packer's default wait for an AMI is 30 minutes (120 checks, 15 seconds apart), which isn't enough. The template raises it with an `aws_polling` block (120 checks, 30 seconds apart, up to 60 minutes). This only extends the timeout; it doesn't slow down builds that finish sooner.
+### Building from an encrypted base AMI
+
+To avoid the full copy, build from an **encrypted copy** of the AWS base AMI in your own account. The build volume then shares snapshot history with that copy, so the AMI's snapshot only contains the build's changes.
+
+The template's `source_ami_owner` and `source_ami_name` variables choose the base AMI. By default they use Amazon's AMI. To use an encrypted copy:
+
+```bash
+packer build \
+  -var "source_ami_owner=self" \
+  -var "source_ami_name=encrypted-Windows_Server-2022-English-Full-Base-*" \
+  aws-windows-ssh.pkr.hcl
+```
+
+CI does this. The [`refresh-base-ami.yml`](.github/workflows/refresh-base-ami.yml) workflow checks weekly for a new AWS base AMI, copies it encrypted as `encrypted-<source name>` (tagged `Purpose=encrypted-base-ami`), and keeps the newest 2 copies. The first copy of each new base AMI takes the full-copy time once. The CI build warns if the copy is behind Amazon's latest AMI. To create a copy by hand in another account or region:
+
+```bash
+aws ec2 copy-image --encrypted \
+  --source-region us-east-1 --source-image-id <amazon-ami-id> \
+  --name "encrypted-<amazon-ami-name>"
+```
+
+For builds from Amazon's unencrypted AMI, Packer's default wait for an AMI is 30 minutes (120 checks, 15 seconds apart), which isn't enough. The template raises it with an `aws_polling` block (120 checks, 30 seconds apart, up to 60 minutes). This only extends the timeout; it doesn't slow down builds that finish sooner.
 
 Some notes:
 
 - Shrinking `volume_size` doesn't speed this up. Snapshots only contain blocks that have been written, so the unused space on the 100 GB volume isn't copied.
-- To get incremental snapshots again, copy the AWS base AMI into your account encrypted (`aws ec2 copy-image --encrypted`) and use that copy as `source_ami`. The copy must be refreshed when AWS publishes a new base AMI (monthly), and each refresh takes the full-copy time once.
 - AMIs encrypted with the `aws/ebs` key can't be shared with other AWS accounts. To share the AMI, set `kms_key_id` on the root volume to a customer-managed KMS key and grant the other accounts access to that key.
 
 ## Customizing the image
