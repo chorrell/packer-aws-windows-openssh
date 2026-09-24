@@ -28,9 +28,10 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - Verifies all AMI snapshots are encrypted
     - Tests SSH connectivity with automatic retry logic (20 attempts, 30-second intervals)
     - Verifies sshd only offers public key authentication
+    - Verifies only `SYSTEM` and `Administrators` can modify `C:\ProgramData\ssh` and `download-key.ps1` (the check runs as a base64 `-EncodedCommand` to avoid quoting PowerShell through ssh)
     - **Validates IMDSv2 enforcement**: Verifies that IMDSv1 is rejected with HTTP 401 (any other error fails the test) and IMDSv2 works correctly; the test instance is launched without `--metadata-options` so this exercises the AMI's `imds_support` default
     - Automatically cleans up all test resources via granular `if: always()` steps plus a final **Orphan Sweep** step that queries by `WorkflowRunId` tag, ensuring cleanup even on mid-build cancellation
-    - Uses AWS OIDC authentication (no static credentials required)
+    - Uses AWS OIDC authentication (no static credentials required); `PACKER_GITHUB_API_TOKEN` (the workflow's `GITHUB_TOKEN`, used to avoid GitHub API rate limits when installing plugins) is set only on the `packer init` step
     - **Note**: Dependabot PRs are skipped (job condition: `if: github.actor != 'dependabot[bot]'`) because they lack access to AWS credentials by default. This is expected behavior for security reasons.
     - **Path filtering**: Only triggers on changes to `aws-windows-ssh.pkr.hcl`, `files/**`, or `.github/workflows/build-and-test-ami.yml`. PRs that only modify docs, tests, or other workflows do not trigger this expensive workflow.
   - [`test.yml`](./.github/workflows/test.yml): Runs Pester unit tests for PowerShell scripts on `windows-latest`. Pester module is cached; install is skipped on cache hit to avoid PSGallery dependency. Emits JUnit XML and publishes a **Pester Tests** GitHub Check via `dorny/test-reporter`. Triggers on PRs that change `files/**`, `tests/**`, or the workflow file, and also on pushes to `main` that change `files/**` or `tests/**`.
@@ -87,7 +88,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **Minimal Image**: The image includes only what is needed for SSH access (no package manager). Custom provisioners go before `PrepareImage.ps1`, which must remain the last provisioner because it runs Sysprep; see "Customizing the image" in `README.md`.
 - **No Hardcoded Secrets**: Sensitive variables (e.g., AWS credentials, `.pkrvars.hcl` files) are excluded via [.gitignore](./.gitignore).
 - **IMDSv2-only**: The key-fetch task must use IMDSv2 (retrieve a token via `PUT /latest/api/token` with short TTL, do not persist tokens) and set instance/AMI metadata options to require IMDSv2.
-- **ACLs**: The download-key.ps1 script sets `administrators_authorized_keys` with inheritance disabled (`/inheritance:r`) and grants Full (`F`) access to `Administrators` and `SYSTEM` via `icacls.exe`.
+- **ACLs**: The download-key.ps1 script sets `administrators_authorized_keys` with inheritance disabled (`/inheritance:r`) and grants Full (`F`) access to `Administrators` and `SYSTEM` via `icacls.exe`. `SetupSsh.ps1` applies the same explicit ACL to `download-key.ps1` itself, since the `DownloadKey` task runs it as SYSTEM at every boot.
 - **Sysprep**: Uses EC2Launch for Sysprep, not the legacy Sysprep tool.
 - **Documentation**: All Markdown file additions and changes must pass markdownlint validation before merging. The CI/CD pipeline enforces this on pull requests.
 - **Pre-commit hooks** (`.pre-commit-config.yaml`): Run locally before each commit to catch issues early. Hooks cover: `markdownlint-cli2-docker` (Markdown), `packer_fmt` (HCL formatting), `actionlint` (GitHub Actions workflow syntax and shellcheck), `zizmor` (Actions security), `gitleaks` (secret detection), and standard hygiene (`trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-merge-conflict`, `check-added-large-files`, `mixed-line-ending`).

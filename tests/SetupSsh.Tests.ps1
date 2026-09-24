@@ -98,6 +98,13 @@ Describe "SetupSsh Script Configuration" {
         }
     }
 
+    Context "Key Download Script ACL" {
+        It "should restrict download-key.ps1 to Administrators and SYSTEM" {
+            $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
+            $scriptContent | Should -Match 'icacls\.exe \$keyDownloadScript /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"'
+        }
+    }
+
     Context "Scheduled Task Configuration" {
         It "should create DownloadKey scheduled task" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw

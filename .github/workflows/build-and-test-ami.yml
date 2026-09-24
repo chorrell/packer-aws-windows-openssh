@@ -17,7 +17,6 @@ on:
       - '.github/workflows/build-and-test-ami.yml'
 
 env:
-  PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AWS_REGION: us-east-1
 
 permissions:
@@ -56,6 +55,9 @@ jobs:
             ${{ runner.os }}-packer-
 
       - name: Initialize Packer
+        env:
+          # Only plugin installation needs the token (avoids GitHub API rate limits)
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: packer init ./aws-windows-ssh.pkr.hcl
 
       - name: Validate Packer Template
@@ -280,6 +282,44 @@ jobs:
             echo "✅ Only public key authentication is allowed"
           else
             echo "❌ sshd allows authentication methods other than publickey"
+            exit 1
+          fi
+
+      - name: Test Key Download Script Permissions
+        run: |
+          # download-key.ps1 runs as SYSTEM at every boot, so only SYSTEM and
+          # Administrators may be able to modify it or its folder. The check runs
+          # as an encoded command to avoid quoting a PowerShell script through ssh.
+          SCRIPT=$(cat <<'PS'
+          $ErrorActionPreference = 'Stop'
+          $trusted = @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')
+          $writeRights = [System.Security.AccessControl.FileSystemRights]'Write, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership'
+          $paths = @((Join-Path $env:ProgramData 'ssh'), (Join-Path $env:ProgramData 'ssh\download-key.ps1'))
+          $violations = foreach ($path in $paths) {
+            icacls.exe $path
+            (Get-Acl -Path $path).Access | Where-Object {
+              $_.AccessControlType -eq 'Allow' -and
+              ($_.FileSystemRights -band $writeRights) -and
+              -not ($_.PropagationFlags -band [System.Security.AccessControl.PropagationFlags]::InheritOnly) -and
+              $trusted -notcontains $_.IdentityReference.Value
+            } | ForEach-Object { "${path}: $($_.IdentityReference) has $($_.FileSystemRights)" }
+          }
+          if ($violations) {
+            $violations | ForEach-Object { Write-Host "ERROR: $_" }
+            exit 1
+          }
+          Write-Host 'SUCCESS: only SYSTEM and Administrators can modify download-key.ps1'
+          PS
+          )
+          ENCODED=$(printf '%s' "${SCRIPT}" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)
+          # shellcheck disable=SC2029 # ENCODED is meant to expand on the runner
+          if ssh test-instance "powershell -NoProfile -NonInteractive -EncodedCommand ${ENCODED}" > /tmp/acl-test.log 2>&1 \
+            && grep -q "SUCCESS: only SYSTEM and Administrators" /tmp/acl-test.log; then
+            cat /tmp/acl-test.log
+            echo "✅ Key download script permissions verified"
+          else
+            cat /tmp/acl-test.log
+            echo "❌ Key download script is writable by non-admin principals"
             exit 1
           fi
 

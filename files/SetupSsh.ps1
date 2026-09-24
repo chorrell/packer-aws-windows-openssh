@@ -59,6 +59,10 @@ Invoke-WebRequest -Headers @{"X-aws-ec2-metadata-token" = $token} -Uri $keyUrl -
 icacls.exe $openSSHAuthorizedKeys /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
 '@ | Out-File $keyDownloadScript
 
+# The task below runs this script as SYSTEM at every boot, so don't rely on the
+# folder's inherited ACL: only Administrators and SYSTEM may read or change it
+icacls.exe $keyDownloadScript /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+
 # Create Task
 $taskName = "DownloadKey"
 $principal = New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
