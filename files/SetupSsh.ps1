@@ -17,6 +17,14 @@ Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service -Name sshd -StartupType Automatic
 Start-Service sshd
 
+# Only allow public key authentication. Prepend so the settings apply globally
+# (the default sshd_config ends with a Match block) and take precedence, since
+# sshd uses the first value it finds. sshd_config must not be UTF-16 encoded.
+$sshdConfig = Join-Path $env:ProgramData 'ssh\sshd_config'
+$authSettings = @('PasswordAuthentication no', 'KbdInteractiveAuthentication no')
+Set-Content -Path $sshdConfig -Value ($authSettings + (Get-Content -Path $sshdConfig)) -Encoding ascii
+Restart-Service sshd
+
 # Confirm the Firewall rule is configured. It should be created automatically by setup. Run the following to verify
 if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue | Select-Object Name, Enabled)) {
     Write-Output "Firewall Rule 'OpenSSH-Server-In-TCP' does not exist, creating it..."
@@ -34,10 +42,10 @@ $keyDownloadScript = Join-Path $env:ProgramData 'ssh\download-key.ps1'
 # Download private key to $env:ProgramData\ssh\administrators_authorized_keys using IMDSv2
 $openSSHAuthorizedKeys = Join-Path $env:ProgramData 'ssh\administrators_authorized_keys'
 
-# Retrieve IMDSv2 session token with 21600 second (6 hour) TTL
+# Retrieve a short-lived (5 minute) IMDSv2 session token
 # See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
 $tokenUrl = "http://169.254.169.254/latest/api/token"
-$token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri $tokenUrl
+$token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "300"} -Method PUT -Uri $tokenUrl
 
 # Retrieve SSH public key using the IMDSv2 token
 $keyUrl = "http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key"

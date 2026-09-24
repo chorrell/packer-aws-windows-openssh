@@ -19,7 +19,7 @@ while ($retryCount -lt $maxRetries -and -not $deleted) {
       Write-Output "File is locked, retrying in 5 seconds... (attempt $retryCount/$maxRetries)"
       Start-Sleep -Seconds 5
     } else {
-      Write-Output "Could not delete authorized_keys file after $maxRetries attempts, continuing anyway (Sysprep will clean up)"
+      throw "Could not delete authorized_keys file after $maxRetries attempts; refusing to bake build-time keys into the AMI"
     }
   }
 }

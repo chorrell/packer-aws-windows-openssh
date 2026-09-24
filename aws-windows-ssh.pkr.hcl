@@ -64,6 +64,9 @@ source "amazon-ebs" "aws-windows-ssh" {
     iops                  = 3000 # Default for gp3
     throughput            = 125  # Default for gp3
     delete_on_termination = true
+    # Encrypt the build volume at launch (default aws/ebs key) so the AMI and
+    # its snapshots are encrypted without an encrypt_boot copy step
+    encrypted = true
   }
   # Register the AMI so instances launched from it require IMDSv2 by default;
   # metadata_options below only applies to the build instance
