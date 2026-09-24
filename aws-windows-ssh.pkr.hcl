@@ -22,6 +22,19 @@ variable "enable_fast_launch" {
   default = true
 }
 
+# Where to find the base AMI. Defaults to Amazon's Windows Server 2022 AMI.
+# CI uses an encrypted copy in this account (maintained by refresh-base-ami.yml)
+# so the encrypted build volume's snapshot is incremental instead of a full copy.
+variable "source_ami_owner" {
+  type    = string
+  default = "amazon"
+}
+
+variable "source_ami_name" {
+  type    = string
+  default = "Windows_Server-2022-English-Full-Base-*"
+}
+
 variable "workflow_run_id" {
   type    = string
   default = ""
@@ -31,12 +44,13 @@ locals { timestamp = regex_replace(timestamp(), "[- TZ:]", "") }
 
 data "amazon-ami" "aws-windows-ssh" {
   filters = {
-    name                = "Windows_Server-2022-English-Full-Base-*"
+    name                = var.source_ami_name
     root-device-type    = "ebs"
+    state               = "available"
     virtualization-type = "hvm"
   }
   most_recent = true
-  owners      = ["amazon"]
+  owners      = [var.source_ami_owner]
 }
 
 source "amazon-ebs" "aws-windows-ssh" {

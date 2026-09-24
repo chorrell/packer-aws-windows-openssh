@@ -61,9 +61,36 @@ jobs:
       - name: Validate Packer Template
         run: packer validate ./aws-windows-ssh.pkr.hcl
 
+      - name: Check Encrypted Base AMI
+        run: |
+          # Builds start from the encrypted copy maintained by refresh-base-ami.yml
+          # shellcheck disable=SC2016 # backticks are JMESPath literals, not expansions
+          read -r BASE_ID BASE_SOURCE < <(aws ec2 describe-images \
+            --owners self \
+            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=state,Values=available" \
+            --query 'sort_by(Images,&CreationDate)[-1].[ImageId, Tags[?Key==`SourceAmiId`]|[0].Value]' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          if [ -z "${BASE_ID}" ] || [ "${BASE_ID}" = "None" ]; then
+            echo "::error::No encrypted base AMI found. Run the 'Refresh Encrypted Base AMI' workflow first."
+            exit 1
+          fi
+          LATEST=$(aws ec2 describe-images \
+            --owners amazon \
+            --filters "Name=name,Values=Windows_Server-2022-English-Full-Base-*" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Encrypted base AMI: ${BASE_ID} (copy of ${BASE_SOURCE}); latest Amazon AMI: ${LATEST}"
+          if [ "${BASE_SOURCE}" != "${LATEST}" ]; then
+            echo "::warning::Encrypted base AMI ${BASE_ID} is a copy of ${BASE_SOURCE}, but Amazon's latest is ${LATEST}. Run the 'Refresh Encrypted Base AMI' workflow to pick up the latest patches."
+          fi
+
       - name: Build AMI with Packer
         env:
           PKR_VAR_workflow_run_id: ${{ github.run_id }}
+          PKR_VAR_source_ami_owner: self
+          PKR_VAR_source_ami_name: encrypted-Windows_Server-2022-English-Full-Base-*
         run: |
           packer build -var "enable_fast_launch=false" ./aws-windows-ssh.pkr.hcl
           AMI_ID=$(jq -r '.builds[-1].artifact_id' packer-manifest.json | cut -d: -f2)
