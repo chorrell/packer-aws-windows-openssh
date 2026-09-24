@@ -125,6 +125,14 @@ jobs:
 
       - name: Create Security Group
         run: |
+          # Only allow SSH from this runner's public IP
+          RUNNER_IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
+          if ! [[ "${RUNNER_IP}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+            echo "❌ Could not determine runner public IPv4 address: '${RUNNER_IP}'"
+            exit 1
+          fi
+          echo "Runner public IP: ${RUNNER_IP}"
+
           SG_NAME="github-actions-test-$(date +%s)"
           SG_ID=$(aws ec2 create-security-group \
             --group-name "${SG_NAME}" \
@@ -138,7 +146,7 @@ jobs:
             --group-id "${SG_ID}" \
             --protocol tcp \
             --port 22 \
-            --cidr 0.0.0.0/0 \
+            --cidr "${RUNNER_IP}/32" \
             --region ${{ env.AWS_REGION }}
 
           aws ec2 create-tags \
@@ -266,12 +274,24 @@ jobs:
             Write-Host 'ERROR: IMDSv1 should be blocked but succeeded'
             exit 1
           } catch {
-            Write-Host 'SUCCESS: IMDSv1 correctly blocked'
-            exit 0
+            # Only HTTP 401 proves IMDSv1 is rejected; a timeout or network
+            # error would otherwise look like a pass
+            `$status = [int]`$_.Exception.Response.StatusCode
+            if (`$status -eq 401) {
+              Write-Host 'SUCCESS: IMDSv1 correctly blocked (HTTP 401)'
+              exit 0
+            }
+            Write-Host "ERROR: IMDSv1 request failed with unexpected status `$status : `$(`$_.Exception.Message)"
+            exit 1
           }
           "@
           EOF
           then
+            if ! grep -q "SUCCESS: IMDSv1 correctly blocked (HTTP 401)" /tmp/imdsv1-test.log; then
+              cat /tmp/imdsv1-test.log
+              echo "❌ IMDSv1 test did not report HTTP 401"
+              exit 1
+            fi
             echo "✅ IMDSv1 blocking verified"
           else
             cat /tmp/imdsv1-test.log
@@ -404,7 +424,8 @@ jobs:
             done
           done
 
-          # Delete tagged security groups and key pairs
+          # Delete tagged security groups and key pairs (including Packer's
+          # temporary packer_* ones, which inherit run_tags)
           SGS=$(aws ec2 describe-security-groups \
             --filters "Name=tag:WorkflowRunId,Values=${RUN_ID}" \
             --query "SecurityGroups[].GroupId" --output text --region "$REGION")
@@ -419,22 +440,4 @@ jobs:
           for kp in $KPS; do
             echo "Orphan sweep: deleting key pair ${kp}..."
             aws ec2 delete-key-pair --key-name "$kp" --region "$REGION" || true
-          done
-
-          # Best-effort cleanup of Packer's internal packer_* temp resources.
-          # delete-security-group fails harmlessly if the SG is still attached to
-          # a running instance; deleting a keypair from EC2 does not affect
-          # already-launched instances.
-          PACKER_SGS=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=packer_*" \
-            --query "SecurityGroups[].GroupId" --output text --region "$REGION")
-          for sg in $PACKER_SGS; do
-            aws ec2 delete-security-group --group-id "$sg" --region "$REGION" 2>/dev/null || true
-          done
-
-          PACKER_KPS=$(aws ec2 describe-key-pairs \
-            --filters "Name=key-name,Values=packer_*" \
-            --query "KeyPairs[].KeyName" --output text --region "$REGION")
-          for kp in $PACKER_KPS; do
-            aws ec2 delete-key-pair --key-name "$kp" --region "$REGION" 2>/dev/null || true
           done
