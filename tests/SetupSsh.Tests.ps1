@@ -48,7 +48,7 @@ Describe "SetupSsh Script Configuration" {
 
         It "should write sshd_config without UTF-16 encoding" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
-            $scriptContent | Should -Match "Set-Content -Path \$sshdConfig .*-Encoding ascii"
+            $scriptContent | Should -Match 'Set-Content -Path \$sshdConfig .*-Encoding ascii'
         }
     }
 
