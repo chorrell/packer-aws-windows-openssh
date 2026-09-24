@@ -10,6 +10,7 @@
         "ec2:DescribeInstanceStatus",
         "ec2:DescribeInstanceTypeOfferings",
         "ec2:DescribeKeyPairs",
+        "ec2:DescribeLaunchTemplates",
         "ec2:DescribeRegions",
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeSnapshots",

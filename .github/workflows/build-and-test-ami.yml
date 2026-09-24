@@ -419,6 +419,16 @@ jobs:
             done
           done
 
+          # Delete Packer's spot fleet launch templates, which Packer only removes
+          # when it exits cleanly (not when the run is cancelled mid-build)
+          LTS=$(aws ec2 describe-launch-templates \
+            --filters "Name=tag:WorkflowRunId,Values=${RUN_ID}" \
+            --query "LaunchTemplates[].LaunchTemplateId" --output text --region "$REGION" || true)
+          for lt in $LTS; do
+            echo "Orphan sweep: deleting launch template ${lt}..."
+            aws ec2 delete-launch-template --launch-template-id "$lt" --region "$REGION" || true
+          done
+
           # Delete tagged security groups and key pairs (including Packer's
           # temporary packer_* ones, which inherit run_tags)
           SGS=$(aws ec2 describe-security-groups \
