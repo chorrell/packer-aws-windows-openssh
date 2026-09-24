@@ -110,13 +110,21 @@
       }
     },
     {
-      "Sid": "CreateImageOutputs",
+      "Sid": "CreateImageOutput",
       "Effect": "Allow",
       "Action": "ec2:CreateImage",
-      "Resource": [
-        "arn:aws:ec2:*::image/*",
-        "arn:aws:ec2:*::snapshot/*"
-      ]
+      "Resource": "arn:aws:ec2:*::image/*"
+    },
+    {
+      "Sid": "CreateImageNewSnapshotsOnly",
+      "Effect": "Allow",
+      "Action": "ec2:CreateImage",
+      "Resource": "arn:aws:ec2:*::snapshot/*",
+      "Condition": {
+        "Null": {
+          "ec2:SnapshotTime": "true"
+        }
+      }
     },
     {
       "Sid": "ManageWorkflowResources",

@@ -39,6 +39,12 @@ workflow-created resource carries:
   tag, so the role can't share, image, or delete anything else in the account.
 - **`RunInstances`** can only launch Amazon-owned images or images built by the
   workflow, so the role can't boot a private AMI with its own key to read it.
+  No statement allows `snapshot/*` for `RunInstances`, so a launch can't add a
+  volume from an existing snapshot. The AMI's own root snapshot isn't
+  evaluated, so normal launches still work.
+- **`CreateImage`** only works on workflow-tagged instances, and only for
+  snapshots that don't exist yet (`ec2:SnapshotTime` is null), so an image
+  can't pull in an existing snapshot through an extra block device mapping.
 - **`CreateTags`** is only allowed while creating a resource, on resources that
   already have a `WorkflowRunId` tag, or on spot instance requests (which Packer
   tags after launch). The role can't add `WorkflowRunId` to an existing
@@ -104,13 +110,18 @@ aws iam create-policy-version \
   --policy-document file://iam/github-actions-policy.json \
   --set-as-default
 
+# Save the current trust policy so it can be restored
+aws iam get-role --role-name GitHubActions-PackerBuild \
+  --query Role.AssumeRolePolicyDocument --output json > trust-policy-backup.json
+
 aws iam update-assume-role-policy \
   --role-name GitHubActions-PackerBuild \
   --policy-document file://iam/github-actions-trust-policy.json
 ```
 
-Then run a pull request build and a `main` build, and check CloudTrail for
-denied calls:
+Then run a `main` build (`gh run rerun <run-id>` on the latest `main` run of
+**Build and Test AMI**) and a pull request build (re-run the check on an open
+pull request, or push to one), and check CloudTrail for denied calls:
 
 ```bash
 aws cloudtrail lookup-events \
@@ -119,10 +130,15 @@ aws cloudtrail lookup-events \
   jq -r '.[] | fromjson | select(.errorCode // "" | test("Unauthorized|AccessDenied")) | "\(.eventTime) \(.eventName) \(.errorCode)"'
 ```
 
-To roll back, make the previous policy version the default again:
+To roll back, make the previous policy version the default again and restore
+the saved trust policy:
 
 ```bash
 aws iam set-default-policy-version --policy-arn "${POLICY_ARN}" --version-id PREVIOUS_VERSION
+
+aws iam update-assume-role-policy \
+  --role-name GitHubActions-PackerBuild \
+  --policy-document file://trust-policy-backup.json
 ```
 
 ### 4. Add the Role ARN to GitHub Secrets
