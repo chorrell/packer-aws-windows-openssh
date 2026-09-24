@@ -69,6 +69,20 @@ jobs:
           AMI_ID=$(jq -r '.builds[-1].artifact_id' packer-manifest.json | cut -d: -f2)
           echo "AMI_ID=${AMI_ID}" >> "$GITHUB_ENV"
 
+      - name: Verify AMI Encryption
+        run: |
+          ENCRYPTED=$(aws ec2 describe-images \
+            --image-ids "${AMI_ID}" \
+            --query "Images[0].BlockDeviceMappings[?Ebs].Ebs.Encrypted" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Snapshot encryption: ${ENCRYPTED}"
+          if [ -z "${ENCRYPTED}" ] || echo "${ENCRYPTED}" | grep -qi false; then
+            echo "❌ AMI has unencrypted snapshots"
+            exit 1
+          fi
+          echo "✅ All AMI snapshots are encrypted"
+
       - name: Generate SSH Key Pair
         run: |
           ssh-keygen -t rsa -b 4096 -f test-key -N "" -C "github-actions-test"
@@ -223,6 +237,21 @@ jobs:
 
           echo "❌ SSH connection test failed after $MAX_ATTEMPTS attempts"
           exit 1
+
+      - name: Test Password Authentication Disabled
+        run: |
+          # Server should only offer publickey; the "Permission denied (...)" list
+          # shows the authentication methods sshd allows
+          OUTPUT=$(ssh -o BatchMode=yes -o PubkeyAuthentication=no \
+            -o PreferredAuthentications=password,keyboard-interactive \
+            test-instance exit 2>&1 || true)
+          echo "${OUTPUT}"
+          if echo "${OUTPUT}" | grep -q "Permission denied (publickey)"; then
+            echo "✅ Only public key authentication is allowed"
+          else
+            echo "❌ sshd allows authentication methods other than publickey"
+            exit 1
+          fi
 
       - name: Test IMDSv2 Enforcement
         run: |

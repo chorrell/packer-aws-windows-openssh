@@ -17,9 +17,9 @@ Describe "PrepareImage Script Configuration" {
             $scriptContent | Should -Match "Start-Sleep.*5"
         }
 
-        It "should continue if cleanup fails after retries" {
+        It "should fail the build if cleanup fails after retries" {
             $scriptContent = Get-Content -Path "./files/PrepareImage.ps1" -Raw
-            $scriptContent | Should -Match "continuing anyway"
+            $scriptContent | Should -Match "throw.*Could not delete authorized_keys"
         }
 
         It "should remove SSH host keys so instances get unique keys" {

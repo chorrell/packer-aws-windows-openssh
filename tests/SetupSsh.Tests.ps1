@@ -38,6 +38,21 @@ Describe "SetupSsh Script Configuration" {
         }
     }
 
+    Context "sshd Authentication Configuration" {
+        It "should disable password and keyboard-interactive authentication" {
+            $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
+            $scriptContent | Should -Match "PasswordAuthentication no"
+            $scriptContent | Should -Match "KbdInteractiveAuthentication no"
+            $scriptContent | Should -Match "ChallengeResponseAuthentication no"
+            $scriptContent | Should -Match "Restart-Service sshd"
+        }
+
+        It "should write sshd_config without UTF-16 encoding" {
+            $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
+            $scriptContent | Should -Match 'Set-Content -Path \$sshdConfig .*-Encoding ascii'
+        }
+    }
+
     Context "PowerShell Default Shell Configuration" {
         It "should set PowerShell as default SSH shell" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
@@ -48,10 +63,9 @@ Describe "SetupSsh Script Configuration" {
     }
 
     Context "IMDSv2 Key Download Configuration" {
-        It "should retrieve IMDSv2 token with 6-hour TTL" {
+        It "should retrieve IMDSv2 token with short TTL" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
-            $scriptContent | Should -Match "X-aws-ec2-metadata-token-ttl-seconds"
-            $scriptContent | Should -Match "21600"
+            $scriptContent | Should -Match '"X-aws-ec2-metadata-token-ttl-seconds"\s*=\s*"300"'
             $scriptContent | Should -Match "169\.254\.169\.254/latest/api/token"
         }
 

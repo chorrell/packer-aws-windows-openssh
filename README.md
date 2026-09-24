@@ -14,6 +14,8 @@ This is an updated implementation of `packer-aws-windows-ssh` with the following
 - The code for downloading the ssh key is somewhat simplified and saves it to `$env:ProgramData\ssh\administrators_authorized_keys`
 - Sysprep is run via the newer [EC2launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2launch.html)
 - The template enables [Fast Launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/win-ami-config-fast-launch.html) for the AMI (see `enable_fast_launch = true`)
+- The AMI and its snapshots are encrypted with the default `aws/ebs` KMS key (see [Encryption and build time](#encryption-and-build-time))
+- Password authentication is disabled; SSH access is key-only
 
 ## Usage
 
@@ -43,6 +45,20 @@ Now build the image:
 ```bash
 packer build aws-windows-ssh.pkr.hcl
 ```
+
+## Encryption and build time
+
+The build instance's root volume sets `encrypted = true` in `launch_block_device_mappings`, so the AMI and its snapshots are encrypted with the account's default `aws/ebs` KMS key. This doesn't depend on the account's [EBS encryption by default](https://docs.aws.amazon.com/ebs/latest/userguide/encryption-by-default.html) setting, and it avoids `encrypt_boot`, which creates an intermediate unencrypted AMI and copies it (requiring `ec2:CopyImage`).
+
+Encryption makes AMI creation noticeably slower. The Windows base AMI published by AWS is unencrypted, so the encrypted build volume shares no snapshot history with it. As a result, the AMI's snapshot is a full copy of every block in use (roughly 25–30 GB for Windows Server 2022) rather than an incremental snapshot of the changes the build made. Expect the "Waiting for AMI to become ready" step to take 30 minutes or more, compared with about 5 minutes for an unencrypted build.
+
+Packer's default wait for an AMI is 30 minutes (120 checks, 15 seconds apart), which isn't enough. The template raises it with an `aws_polling` block (120 checks, 30 seconds apart, up to 60 minutes). This only extends the timeout; it doesn't slow down builds that finish sooner.
+
+Some notes:
+
+- Shrinking `volume_size` doesn't speed this up. Snapshots only contain blocks that have been written, so the unused space on the 100 GB volume isn't copied.
+- To get incremental snapshots again, copy the AWS base AMI into your account encrypted (`aws ec2 copy-image --encrypted`) and use that copy as `source_ami`. The copy must be refreshed when AWS publishes a new base AMI (monthly), and each refresh takes the full-copy time once.
+- AMIs encrypted with the `aws/ebs` key can't be shared with other AWS accounts. To share the AMI, set `kms_key_id` on the root volume to a customer-managed KMS key and grant the other accounts access to that key.
 
 ## Customizing the image
 
