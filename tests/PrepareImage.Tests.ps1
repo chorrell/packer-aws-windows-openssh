@@ -21,6 +21,11 @@ Describe "PrepareImage Script Configuration" {
             $scriptContent = Get-Content -Path "./files/PrepareImage.ps1" -Raw
             $scriptContent | Should -Match "continuing anyway"
         }
+
+        It "should remove SSH host keys so instances get unique keys" {
+            $scriptContent = Get-Content -Path "./files/PrepareImage.ps1" -Raw
+            $scriptContent | Should -Match "Remove-Item.*ssh\\ssh_host_\*"
+        }
     }
 
     Context "Scheduled Task Management" {
