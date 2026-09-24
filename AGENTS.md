@@ -6,7 +6,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **Packer Template**: The main build logic is in [`aws-windows-ssh.pkr.hcl`](./aws-windows-ssh.pkr.hcl), written in HCL2. It defines:
   - The base Windows Server 2022 AMI (auto-discovered via filters)
-  - Spot instance usage for cost efficiency (c8i/c8a/c7i/c7a/c6i/c6a/m8i/m8a/m7i/m7a/m6i/m6a instance types)
+  - Spot instance usage for cost efficiency (c8i/c8a/c7i/c7a/c6i/c6a/m8i/m8a/m7i/m7a/m6i/m6a instance types) with `spot_allocation_strategy = "price-capacity-optimized"` to reduce mid-build spot interruptions
   - SSH as the communicator, with OpenSSH installed via provisioning
   - IMDSv2 enforcement via `metadata_options` block (`http_tokens = "required"`) on the build instance, and `imds_support = "v2.0"` so instances launched from the AMI require IMDSv2 by default
   - 100GB gp3 root volume (vs 30GB default) via `launch_block_device_mappings` for adequate disk space and performance

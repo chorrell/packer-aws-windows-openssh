@@ -47,11 +47,14 @@ source "amazon-ebs" "aws-windows-ssh" {
   associate_public_ip_address = true
   communicator                = "ssh"
   spot_price                  = "auto"
-  spot_instance_types         = ["c8i.xlarge", "c8a.xlarge", "c7i.xlarge", "c7a.xlarge", "c6i.xlarge", "c6a.xlarge", "m8i.xlarge", "m8a.xlarge", "m7i.xlarge", "m7a.xlarge", "m6i.xlarge", "m6a.xlarge"]
-  ssh_timeout                 = "10m"
-  ssh_username                = "Administrator"
-  ssh_file_transfer_method    = "sftp"
-  user_data_file              = "files/SetupSsh.ps1"
+  # Prefer pools with low interruption risk; the default (lowest-price) picks
+  # the cheapest pool, which is the most likely to be reclaimed mid-build
+  spot_allocation_strategy = "price-capacity-optimized"
+  spot_instance_types      = ["c8i.xlarge", "c8a.xlarge", "c7i.xlarge", "c7a.xlarge", "c6i.xlarge", "c6a.xlarge", "m8i.xlarge", "m8a.xlarge", "m7i.xlarge", "m7a.xlarge", "m6i.xlarge", "m6a.xlarge"]
+  ssh_timeout              = "10m"
+  ssh_username             = "Administrator"
+  ssh_file_transfer_method = "sftp"
+  user_data_file           = "files/SetupSsh.ps1"
   # This ensures the instace has enough disk space and that
   # the volume_type is gp3 for better performance
   launch_block_device_mappings {
