@@ -20,8 +20,11 @@ Start-Service sshd
 # Only allow public key authentication. Prepend so the settings apply globally
 # (the default sshd_config ends with a Match block) and take precedence, since
 # sshd uses the first value it finds. sshd_config must not be UTF-16 encoded.
+# Older OpenSSH (as shipped with Windows Server 2022) re-enables
+# keyboard-interactive when ChallengeResponseAuthentication is yes (the
+# default); newer versions treat it as an alias, so set both.
 $sshdConfig = Join-Path $env:ProgramData 'ssh\sshd_config'
-$authSettings = @('PasswordAuthentication no', 'KbdInteractiveAuthentication no')
+$authSettings = @('PasswordAuthentication no', 'KbdInteractiveAuthentication no', 'ChallengeResponseAuthentication no')
 Set-Content -Path $sshdConfig -Value ($authSettings + (Get-Content -Path $sshdConfig)) -Encoding ascii
 Restart-Service sshd
 

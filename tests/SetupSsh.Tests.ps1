@@ -43,6 +43,7 @@ Describe "SetupSsh Script Configuration" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
             $scriptContent | Should -Match "PasswordAuthentication no"
             $scriptContent | Should -Match "KbdInteractiveAuthentication no"
+            $scriptContent | Should -Match "ChallengeResponseAuthentication no"
             $scriptContent | Should -Match "Restart-Service sshd"
         }
 
