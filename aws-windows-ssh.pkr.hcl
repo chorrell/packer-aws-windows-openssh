@@ -68,6 +68,12 @@ source "amazon-ebs" "aws-windows-ssh" {
     # its snapshots are encrypted without an encrypt_boot copy step
     encrypted = true
   }
+  # The encrypted root volume produces a full (non-incremental) snapshot of the
+  # unencrypted base image, which can take over 30 minutes (Packer's default wait)
+  aws_polling {
+    delay_seconds = 30
+    max_attempts  = 120
+  }
   # Register the AMI so instances launched from it require IMDSv2 by default;
   # metadata_options below only applies to the build instance
   imds_support = "v2.0"
