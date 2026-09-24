@@ -35,7 +35,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - [`test.yml`](./.github/workflows/test.yml): Runs Pester unit tests for PowerShell scripts on `windows-latest`. Pester module is cached; install is skipped on cache hit to avoid PSGallery dependency. Emits JUnit XML and publishes a **Pester Tests** GitHub Check via `dorny/test-reporter`. Triggers on PRs that change `files/**`, `tests/**`, or the workflow file, and also on pushes to `main` that change `files/**` or `tests/**`.
   - [`PSScriptAnalyzer.yml`](./.github/workflows/PSScriptAnalyzer.yml): Lints PowerShell scripts on pull requests and pushes to `main` that change `files/**` or the workflow file itself. PSScriptAnalyzer 1.24.0 is pinned and cached; install is skipped on cache hit.
   - [`markdownlint.yml`](./.github/workflows/markdownlint.yml): Lints Markdown files on pull requests and pushes to `main` that change `**/*.md` or the workflow file itself.
-  - [`cleanup-orphans.yml`](./.github/workflows/cleanup-orphans.yml): Daily scheduled (and manual `workflow_dispatch`, dry run by default) fallback cleanup for `build-and-test-ami.yml` runs whose own cleanup never ran (runner lost, job timeout, forced cancellation). Deletes instances, AMIs and snapshots, detached volumes, security groups, and key pairs tagged `WorkflowRunId` only when the GitHub API reports that run as `completed`; if the run can't be found, only resources older than 24 hours are deleted. Resources with an empty `WorkflowRunId` (local builds) are never touched. Uses the same `AWS_ROLE_ARN` OIDC role plus `actions: read`.
+  - [`cleanup-orphans.yml`](./.github/workflows/cleanup-orphans.yml): Daily scheduled (and manual `workflow_dispatch`, dry run by default) fallback cleanup for `build-and-test-ami.yml` runs whose own cleanup never ran (runner lost, job timeout, forced cancellation). Deletes instances, AMIs and snapshots, detached volumes, launch templates, security groups, and key pairs tagged `WorkflowRunId` only when the GitHub API reports that run as `completed`; if the run can't be found, only resources older than 24 hours are deleted. Resources with an empty `WorkflowRunId` (local builds) are never touched. Uses the same `AWS_ROLE_ARN` OIDC role plus `actions: read`.
 
 ## Developer Workflows
 
@@ -66,7 +66,8 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 
 - **CI/CD Setup** (for GitHub Actions):
   - Configure AWS OIDC authentication following [`.github/workflows/AWS_OIDC_SETUP.md`](./.github/workflows/AWS_OIDC_SETUP.md)
-    - **Important**: The OIDC trust policy must restrict access to your specific repository using `repo:ORG/REPO:*` pattern to prevent unauthorized access from forks and other repositories.
+    - **Important**: The OIDC trust policy ([`iam/github-actions-trust-policy.json`](./iam/github-actions-trust-policy.json)) only accepts the `repo:ORG/REPO:ref:refs/heads/main` and `repo:ORG/REPO:pull_request` subjects (no wildcard), so forks, other repositories, and other branches can't assume the role.
+    - **Least privilege**: The permissions policy ([`iam/github-actions-policy.json`](./iam/github-actions-policy.json)) requires a non-empty `WorkflowRunId` tag on resources the role creates (tag on create) and on existing resources it modifies or deletes, limits `RunInstances` to Amazon-owned or workflow-tagged images, and grants no volume create/attach, snapshot attribute, or KMS permissions. Any new workflow step that creates an AWS resource must tag it with `WorkflowRunId` via `--tag-specifications` at creation, not with a later `create-tags` call. Keep the policy in sync with the actions the workflows use (CloudTrail `Username=GitHubActions` shows them).
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests to `main` and on pushes to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts (JUnit XML results uploaded as `pester-results` artifact; results also published as a GitHub Check)
@@ -76,7 +77,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
     - Lint PowerShell scripts with PSScriptAnalyzer (PSScriptAnalyzer module cached)
     - Lint Markdown files with markdownlint
     - Clean up all test resources
-  - **Concurrency**: All workflows except `cleanup-orphans.yml` use `cancel-in-progress: true` to cancel superseded runs on rapid PR pushes. The AMI build workflow uses a tag-based orphan sweep (`WorkflowRunId=${{ github.run_id }}`) stamped on every Packer and workflow-created resource, with a final `Cleanup - Orphan Sweep` step (`if: always()`) that terminates/deregisters/deletes by that tag so mid-build cancellation leaves no leaked AWS resources.
+  - **Concurrency**: All workflows except `cleanup-orphans.yml` use `cancel-in-progress: true` to cancel superseded runs on rapid PR pushes. The AMI build workflow uses a tag-based orphan sweep (`WorkflowRunId=${{ github.run_id }}`) stamped on every Packer and workflow-created resource (including Packer's spot fleet launch templates, which Packer doesn't delete when a run is cancelled), with a final `Cleanup - Orphan Sweep` step (`if: always()`) that terminates/deregisters/deletes by that tag so mid-build cancellation leaves no leaked AWS resources.
 
 ## Project Conventions
 
@@ -112,5 +113,6 @@ When making changes to the project, always review AGENTS.md and update it alongs
 - Provisioning scripts: `files/`
 - CI/CD workflows: `.github/workflows/`
 - AWS OIDC setup guide: `.github/workflows/AWS_OIDC_SETUP.md`
+- IAM policies for the CI role: `iam/`
 - AMI manifest output: `packer-manifest.json` (generated during builds)
 - Usage and rationale: `README.md`

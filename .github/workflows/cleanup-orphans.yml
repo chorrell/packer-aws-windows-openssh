@@ -149,6 +149,16 @@ jobs:
             --filters "Name=tag-key,Values=WorkflowRunId" \
             --query "SecurityGroups[].[GroupId, ${TAG_QUERY}]" --output json | rows)
 
+          # Launch templates (Packer's spot fleet templates)
+          while IFS='|' read -r id run_id created; do
+            [ -n "${id}" ] || continue
+            is_orphan "${run_id}" "${created}" || continue
+            echo "Launch template ${id} (run ${run_id})"
+            act aws ec2 delete-launch-template --region "${REGION}" --launch-template-id "${id}"
+          done < <(aws ec2 describe-launch-templates --region "${REGION}" \
+            --filters "Name=tag-key,Values=WorkflowRunId" \
+            --query "LaunchTemplates[].[LaunchTemplateId, ${TAG_QUERY}, CreateTime]" --output json | rows)
+
           # Key pairs
           while IFS='|' read -r id run_id created; do
             [ -n "${id}" ] || continue
