@@ -135,6 +135,15 @@ which lack secret access.
 5. Value: Paste the role ARN
 6. Click **Add secret**
 
+### 5. Scheduled Orphan Cleanup
+
+The `cleanup-orphans.yml` workflow uses the same `AWS_ROLE_ARN` role. It runs
+daily from the default branch (covered by the `repo:ORG/REPO:*` trust policy)
+and deletes AMI build resources left behind by runs whose cleanup steps never
+ran. It needs no permissions beyond the policy above. To preview what it would
+delete, run it manually from the **Actions** tab (dry run is the default for
+manual runs).
+
 ## Verification
 
 To verify the setup is working:

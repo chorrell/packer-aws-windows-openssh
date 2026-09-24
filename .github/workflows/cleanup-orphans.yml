@@ -1,0 +1,162 @@
+name: Cleanup Orphaned AMI Build Resources
+
+# Fallback for runs of build-and-test-ami.yml whose cleanup steps never ran
+# (runner lost, job timeout, forced cancellation). Only deletes resources
+# tagged with the WorkflowRunId of a run that has completed, so builds that
+# are still in progress are never touched.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List orphaned resources without deleting them'
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete orphaned resources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # Scheduled runs have no inputs, so they delete for real
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          # Resources whose run can't be found are only deleted once this old
+          MIN_AGE_HOURS: 24
+        run: |
+          REGION="${AWS_REGION}"
+          # shellcheck disable=SC2016 # backticks are JMESPath literals, not expansions
+          TAG_QUERY='Tags[?Key==`WorkflowRunId`]|[0].Value'
+          declare -A RUN_STATUS
+
+          # Succeeds if the resource belongs to a finished run and can be deleted.
+          # $1 = WorkflowRunId tag value, $2 = resource creation time (or "None")
+          is_orphan() {
+            local run_id="$1" created="$2" status age_hours
+            # Local builds tag WorkflowRunId="" and must never be deleted
+            [[ "${run_id}" =~ ^[0-9]+$ ]] || return 1
+            if [ -z "${RUN_STATUS[$run_id]+set}" ]; then
+              # gh prints the error body on stdout for a 404, so only trust
+              # the output when the call succeeds
+              if status=$(gh api "repos/${REPO}/actions/runs/${run_id}" --jq .status 2>/dev/null); then
+                RUN_STATUS[$run_id]="${status}"
+              else
+                RUN_STATUS[$run_id]="unknown"
+              fi
+            fi
+            status="${RUN_STATUS[$run_id]}"
+            [ "${status}" = "completed" ] && return 0
+            [ "${status}" != "unknown" ] && return 1
+            # Run not found: fall back to resource age, well beyond the 6h job limit
+            [ "${created}" != "None" ] || return 1
+            age_hours=$(( ($(date +%s) - $(date -d "${created}" +%s)) / 3600 ))
+            [ "${age_hours}" -ge "${MIN_AGE_HOURS}" ]
+          }
+
+          # Print "|"-separated rows from a JSON array of arrays. A non-whitespace
+          # separator keeps empty fields (e.g. WorkflowRunId="") in place.
+          rows() {
+            jq -r '.[] | map(if . == null then "None" else tostring end) | join("|")'
+          }
+
+          act() {
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "  [dry-run] $*"
+            else
+              "$@" || echo "  ⚠️ failed: $*"
+            fi
+          }
+
+          # Instances (terminate first so security groups and volumes are released)
+          ORPHAN_INSTANCES=()
+          while IFS='|' read -r id run_id created; do
+            [ -n "${id}" ] || continue
+            if is_orphan "${run_id}" "${created}"; then
+              echo "Instance ${id} (run ${run_id})"
+              ORPHAN_INSTANCES+=("${id}")
+            fi
+          done < <(aws ec2 describe-instances --region "${REGION}" \
+            --filters "Name=tag-key,Values=WorkflowRunId" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query "Reservations[].Instances[].[InstanceId, ${TAG_QUERY}, LaunchTime]" --output json | rows)
+          if [ "${#ORPHAN_INSTANCES[@]}" -gt 0 ]; then
+            act aws ec2 terminate-instances --region "${REGION}" --instance-ids "${ORPHAN_INSTANCES[@]}"
+            act aws ec2 wait instance-terminated --region "${REGION}" --instance-ids "${ORPHAN_INSTANCES[@]}"
+          fi
+
+          # AMIs and their snapshots
+          while IFS='|' read -r id run_id created; do
+            [ -n "${id}" ] || continue
+            is_orphan "${run_id}" "${created}" || continue
+            echo "AMI ${id} (run ${run_id})"
+            snaps=$(aws ec2 describe-images --region "${REGION}" --image-ids "${id}" \
+              --query "Images[0].BlockDeviceMappings[*].Ebs.SnapshotId" --output text || true)
+            act aws ec2 deregister-image --region "${REGION}" --image-id "${id}"
+            for snap in ${snaps}; do
+              act aws ec2 delete-snapshot --region "${REGION}" --snapshot-id "${snap}"
+            done
+          done < <(aws ec2 describe-images --region "${REGION}" --owners self \
+            --filters "Name=tag-key,Values=WorkflowRunId" \
+            --query "Images[].[ImageId, ${TAG_QUERY}, CreationDate]" --output json | rows)
+
+          # Remaining tagged snapshots (e.g. from an AMI that was already deregistered)
+          while IFS='|' read -r id run_id created; do
+            [ -n "${id}" ] || continue
+            is_orphan "${run_id}" "${created}" || continue
+            echo "Snapshot ${id} (run ${run_id})"
+            act aws ec2 delete-snapshot --region "${REGION}" --snapshot-id "${id}"
+          done < <(aws ec2 describe-snapshots --region "${REGION}" --owner-ids self \
+            --filters "Name=tag-key,Values=WorkflowRunId" \
+            --query "Snapshots[].[SnapshotId, ${TAG_QUERY}, StartTime]" --output json | rows)
+
+          # Detached volumes
+          while IFS='|' read -r id run_id created; do
+            [ -n "${id}" ] || continue
+            is_orphan "${run_id}" "${created}" || continue
+            echo "Volume ${id} (run ${run_id})"
+            act aws ec2 delete-volume --region "${REGION}" --volume-id "${id}"
+          done < <(aws ec2 describe-volumes --region "${REGION}" \
+            --filters "Name=tag-key,Values=WorkflowRunId" "Name=status,Values=available" \
+            --query "Volumes[].[VolumeId, ${TAG_QUERY}, CreateTime]" --output json | rows)
+
+          # Security groups (no creation time, so only deleted for completed runs)
+          while IFS='|' read -r id run_id; do
+            [ -n "${id}" ] || continue
+            is_orphan "${run_id}" "None" || continue
+            echo "Security group ${id} (run ${run_id})"
+            act aws ec2 delete-security-group --region "${REGION}" --group-id "${id}"
+          done < <(aws ec2 describe-security-groups --region "${REGION}" \
+            --filters "Name=tag-key,Values=WorkflowRunId" \
+            --query "SecurityGroups[].[GroupId, ${TAG_QUERY}]" --output json | rows)
+
+          # Key pairs
+          while IFS='|' read -r id run_id created; do
+            [ -n "${id}" ] || continue
+            is_orphan "${run_id}" "${created}" || continue
+            echo "Key pair ${id} (run ${run_id})"
+            act aws ec2 delete-key-pair --region "${REGION}" --key-name "${id}"
+          done < <(aws ec2 describe-key-pairs --region "${REGION}" \
+            --filters "Name=tag-key,Values=WorkflowRunId" \
+            --query "KeyPairs[].[KeyName, ${TAG_QUERY}, CreateTime]" --output json | rows)
+
+          echo "Done (dry run: ${DRY_RUN})"
