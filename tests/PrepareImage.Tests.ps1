@@ -26,6 +26,11 @@ Describe "PrepareImage Script Configuration" {
             $scriptContent = Get-Content -Path "./files/PrepareImage.ps1" -Raw
             $scriptContent | Should -Match "Remove-Item.*ssh\\ssh_host_\*"
         }
+
+        It "should remove the SetupSsh transcript so it isn't baked into the AMI" {
+            $scriptContent = Get-Content -Path "./files/PrepareImage.ps1" -Raw
+            $scriptContent | Should -Match "Remove-Item.*Amazon\\EC2Launch\\log\\SetupSsh-transcript\.log"
+        }
     }
 
     Context "Scheduled Task Management" {

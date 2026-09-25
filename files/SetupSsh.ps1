@@ -4,6 +4,13 @@
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
 
+# Record everything this script does (including the error that stops it) next
+# to EC2Launch v2's agent.log, so a failed build can be diagnosed from a fixed
+# path. PrepareImage.ps1 deletes it so it isn't baked into the AMI. Native
+# command output is piped to Write-Output below so the transcript captures it.
+$transcriptPath = Join-Path $env:ProgramData 'Amazon\EC2Launch\log\SetupSsh-transcript.log'
+Start-Transcript -Path $transcriptPath -Append -IncludeInvocationHeader
+
 # Install OpenSSH using Add-WindowsCapability
 # See: https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows
 
@@ -61,7 +68,7 @@ icacls.exe $openSSHAuthorizedKeys /inheritance:r /grant "Administrators:F" /gran
 
 # The task below runs this script as SYSTEM at every boot, so don't rely on the
 # folder's inherited ACL: only Administrators and SYSTEM may read or change it
-icacls.exe $keyDownloadScript /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+icacls.exe $keyDownloadScript /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Write-Output
 
 # Create Task
 $taskName = "DownloadKey"
@@ -71,6 +78,8 @@ $trigger = New-ScheduledTaskTrigger -AtStartup
 Register-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -TaskName $taskName -Description $taskName
 
 # Fetch key via $keyDownloadScript
-& Powershell.exe -ExecutionPolicy Bypass -File $keyDownloadScript
+& Powershell.exe -ExecutionPolicy Bypass -File $keyDownloadScript | Write-Output
+
+Stop-Transcript
 
 </powershell>

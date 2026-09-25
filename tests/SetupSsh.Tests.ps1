@@ -125,5 +125,12 @@ Describe "SetupSsh Script Configuration" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
             $scriptContent | Should -Match '\$ErrorActionPreference\s*=\s*[''"]Stop[''"]'
         }
+
+        It "should record a transcript next to the EC2Launch agent log" {
+            $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
+            $scriptContent | Should -Match "Amazon\\EC2Launch\\log\\SetupSsh-transcript\.log"
+            $scriptContent | Should -Match "Start-Transcript -Path \`$transcriptPath"
+            $scriptContent | Should -Match "Stop-Transcript"
+        }
     }
 }
