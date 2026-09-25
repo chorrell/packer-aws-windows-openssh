@@ -80,6 +80,49 @@ Some notes:
 - Shrinking `volume_size` doesn't speed this up. Snapshots only contain blocks that have been written, so the unused space on the 100 GB volume isn't copied.
 - AMIs encrypted with the `aws/ebs` key can't be shared with other AWS accounts. To share the AMI, set `kms_key_id` on the root volume to a customer-managed KMS key and grant the other accounts access to that key.
 
+## Debugging a failed build
+
+`files/SetupSsh.ps1` runs as EC2Launch v2 user data, before SSH is available, so Packer never sees its output. If it fails, the build just times out waiting for SSH, and because SSH is what's broken you can't connect to read the logs. To debug, give the build instance an instance profile so you can open a shell with [SSM Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html) instead. The Windows Server base AMI already includes the SSM Agent.
+
+### One-time setup
+
+Create a role and instance profile named `packer-build-ssm` with the AWS managed `AmazonSSMManagedInstanceCore` policy, using [`iam/build-instance-trust-policy.json`](iam/build-instance-trust-policy.json):
+
+```bash
+aws iam create-role --role-name packer-build-ssm \
+  --assume-role-policy-document file://iam/build-instance-trust-policy.json
+aws iam attach-role-policy --role-name packer-build-ssm \
+  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-instance-profile --instance-profile-name packer-build-ssm
+aws iam add-role-to-instance-profile --instance-profile-name packer-build-ssm \
+  --role-name packer-build-ssm
+```
+
+The IAM identity that runs Packer also needs [`iam/build-instance-pass-role-policy.json`](iam/build-instance-pass-role-policy.json) (replace `YOUR_ACCOUNT_ID`), which allows `iam:PassRole` for that role to EC2 and `iam:GetInstanceProfile`, which Packer uses to check the profile exists. To open sessions you need `ssm:StartSession` and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for the AWS CLI. The build instance needs outbound HTTPS to the SSM endpoints, which the default VPC's public subnets provide.
+
+### Debugging
+
+Build with the profile and `-on-error=ask`:
+
+```bash
+packer build -var "iam_instance_profile=packer-build-ssm" -on-error=ask aws-windows-ssh.pkr.hcl
+```
+
+When the build fails, Packer pauses and leaves the instance running. Find the instance ID in Packer's output (`Instance ID: i-...`) and open a PowerShell session:
+
+```bash
+aws ssm start-session --target <instance-id>
+```
+
+Useful logs:
+
+- `C:\ProgramData\Amazon\EC2Launch\log\SetupSsh-transcript.log`: a transcript of `SetupSsh.ps1`, including the error that stopped it
+- `C:\ProgramData\Amazon\EC2Launch\log\agent.log`: EC2Launch v2's log, including the user data exit code and the paths to the script's `Output.tmp` and `Err.tmp`
+
+When you're done, answer `c` (clean up) at Packer's prompt so it deletes the instance, security group, key pair, and launch template. Avoid `-on-error=abort`: it leaves those resources behind, and local builds have no `WorkflowRunId` tag, so [`cleanup-orphans.yml`](.github/workflows/cleanup-orphans.yml) won't remove them.
+
+Only pass the profile when debugging. Opening a session creates a local administrator account, `ssm-user`, on the instance, so don't let a build you've opened a session on go on to produce an AMI you'll use. CI doesn't set `iam_instance_profile`, and its role deliberately has no `iam:PassRole`.
+
 ## Customizing the image
 
 The image intentionally includes only what's needed for SSH access. To add your own software or configuration, add a provisioner to the `build` block in `aws-windows-ssh.pkr.hcl`, before the `PrepareImage.ps1` provisioner. `PrepareImage.ps1` must run last because it removes build-time SSH keys and runs Sysprep.
