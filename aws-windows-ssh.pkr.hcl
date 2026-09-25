@@ -35,6 +35,14 @@ variable "source_ami_name" {
   default = "Windows_Server-2022-English-Full-Base-*"
 }
 
+# Optional instance profile for the build instance, for debugging a failed build
+# with SSM Session Manager (see "Debugging a failed build" in README.md). The
+# default (empty) launches the build instance without one; CI doesn't set it.
+variable "iam_instance_profile" {
+  type    = string
+  default = ""
+}
+
 variable "workflow_run_id" {
   type    = string
   default = ""
@@ -72,6 +80,7 @@ source "amazon-ebs" "aws-windows-ssh" {
   ssh_username             = "Administrator"
   ssh_file_transfer_method = "sftp"
   user_data_file           = "files/SetupSsh.ps1"
+  iam_instance_profile     = var.iam_instance_profile
   # This ensures the instace has enough disk space and that
   # the volume_type is gp3 for better performance
   launch_block_device_mappings {

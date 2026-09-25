@@ -13,6 +13,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - 100GB gp3 root volume (vs 30GB default) via `launch_block_device_mappings` for adequate disk space and performance, with `encrypted = true` so the build volume, AMI, and snapshots are encrypted with the default `aws/ebs` key (no `encrypt_boot` copy step; note `aws/ebs`-encrypted AMIs cannot be shared cross-account). Because the base AMI is unencrypted, the encrypted volume's snapshot is a full copy rather than incremental, so AMI creation takes ~30+ minutes; `aws_polling` (30s × 120 = 60 minutes) raises Packer's default 30-minute AMI wait
   - Fast Launch configurable via `enable_fast_launch` variable (default: enabled)
   - `workflow_run_id` variable (passed as `PKR_VAR_workflow_run_id` from CI) applied via `run_tags` (which Packer also applies to its temporary `packer_*` security group and key pair), `run_volume_tags`, `spot_tags`, `tags`, and `snapshot_tags` to enable tag-based orphan cleanup on workflow cancellation
+  - Optional `iam_instance_profile` variable (default empty: no profile) for debugging failed builds with SSM Session Manager; see "Debugging a failed build" in `README.md` and the `iam/build-instance-*.json` files. CI does not set it, and the CI role deliberately has no `iam:PassRole`
   - Manifest post-processor that outputs AMI IDs to `packer-manifest.json` for CI/CD automation
 
 - **Provisioning Scripts**: All provisioning logic is in [`files/`](./files/):
@@ -116,6 +117,6 @@ When making changes to the project, always review AGENTS.md and update it alongs
 - Provisioning scripts: `files/`
 - CI/CD workflows: `.github/workflows/`
 - AWS OIDC setup guide: `.github/workflows/AWS_OIDC_SETUP.md`
-- IAM policies for the CI role and the base AMI refresh role: `iam/`
+- IAM policies for the CI role, the base AMI refresh role, and the optional SSM debugging build-instance role: `iam/`
 - AMI manifest output: `packer-manifest.json` (generated during builds)
 - Usage and rationale: `README.md`
