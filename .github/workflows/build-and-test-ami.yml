@@ -22,7 +22,8 @@ env:
   # at a lower price (Windows licensing is per vCPU)
   TEST_INSTANCE_TYPE: m7i-flex.large
   # Pinned for reproducible builds; Dependabot doesn't update this, so bump it
-  # by hand (see https://releases.hashicorp.com/packer/)
+  # by hand (see https://releases.hashicorp.com/packer/). The Setup Packer step
+  # uses the runner image's Packer when it matches, so no download is needed.
   PACKER_VERSION: 1.16.1
 
 permissions:
@@ -49,10 +50,28 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Use the runner image's Packer when it's the pinned version, otherwise
+      # download that release directly. hashicorp/setup-packer depends on
+      # api.releases.hashicorp.com, which intermittently returns 504s.
       - name: Setup Packer
-        uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
-        with:
-          version: ${{ env.PACKER_VERSION }}
+        run: |
+          if [ "$(packer version 2>/dev/null | head -n 1)" = "Packer v${PACKER_VERSION}" ]; then
+            echo "Using the runner's preinstalled Packer ${PACKER_VERSION}"
+            exit 0
+          fi
+
+          echo "Downloading Packer ${PACKER_VERSION}"
+          PACKER_DIR="${RUNNER_TEMP}/packer"
+          BASE_URL="https://releases.hashicorp.com/packer/${PACKER_VERSION}"
+          ZIP="packer_${PACKER_VERSION}_linux_amd64.zip"
+          SUMS="packer_${PACKER_VERSION}_SHA256SUMS"
+          mkdir -p "${PACKER_DIR}"
+          cd "${PACKER_DIR}"
+          curl -fsSL --retry 5 --retry-all-errors -O "${BASE_URL}/${ZIP}" -O "${BASE_URL}/${SUMS}"
+          grep " ${ZIP}\$" "${SUMS}" | sha256sum -c -
+          unzip -o -q "${ZIP}" packer
+          ./packer version
+          echo "${PACKER_DIR}" >> "$GITHUB_PATH"
 
       - name: Cache Packer plugins
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
