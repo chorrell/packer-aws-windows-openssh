@@ -29,6 +29,16 @@ while ($retryCount -lt $maxRetries -and -not $deleted) {
 Write-Output "Removing SSH host keys"
 Remove-Item -Force -Path (Join-Path $env:ProgramData 'ssh\ssh_host_*')
 
+# Remove the SetupSsh.ps1 user data transcript; it only matters for failed
+# builds. Don't fail the build over a log file (e.g. if user data hasn't quite
+# released it yet).
+Write-Output "Removing SetupSsh transcript"
+try {
+  Remove-Item -Force -Path (Join-Path $env:ProgramData 'Amazon\EC2Launch\log\SetupSsh-transcript.log') -ErrorAction Stop
+} catch {
+  Write-Output "Could not remove SetupSsh transcript: $_"
+}
+
 # Make sure task is enabled
 Enable-ScheduledTask "DownloadKey"
 
