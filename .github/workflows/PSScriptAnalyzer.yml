@@ -1,15 +1,17 @@
-name: Run PSPSScriptAnalyzer on PowerShell Scripts
+name: Run PSScriptAnalyzer on PowerShell Scripts
 
 on:
   pull_request:
     paths:
-      - 'files/**'
+      - '**.ps1'
+      - 'PSScriptAnalyzerSettings.psd1'
       - '.github/workflows/PSScriptAnalyzer.yml'
   push:
     branches:
       - main
     paths:
-      - 'files/**'
+      - '**.ps1'
+      - 'PSScriptAnalyzerSettings.psd1'
       - '.github/workflows/PSScriptAnalyzer.yml'
 
 permissions:
@@ -28,20 +30,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Cache PowerShell modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.local/share/powershell/Modules
-          key: ${{ runner.os }}-psmodules-pssa-1.24.0
-
-      - name: Install PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer | Where-Object Version -eq '1.24.0')) {
-            Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.24.0 -Force -Scope CurrentUser
-          }
-
+      # The pinned PSScriptAnalyzer version is preinstalled on ubuntu-latest;
+      # the script only installs it if the runner image changes.
       - name: Run PSScriptAnalyzer on PowerShell Scripts
         shell: pwsh
-        run: |
-          Invoke-ScriptAnalyzer -Path ./files/ -Recurse -Severity Error -EnableExit
+        run: ./scripts/Invoke-PSScriptAnalyzer.ps1

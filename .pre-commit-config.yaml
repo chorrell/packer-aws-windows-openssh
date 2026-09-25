@@ -24,6 +24,20 @@ repos:
     hooks:
       - id: gitleaks
 
+  # No local pwsh needed. The image has no multi-arch manifest, so pin amd64
+  # (runs under Rosetta/QEMU on arm64 hosts). HOME=/tmp gives the non-root
+  # container user somewhere to install PSScriptAnalyzer.
+  - repo: local
+    hooks:
+      - id: psscriptanalyzer
+        name: PSScriptAnalyzer
+        language: docker_image
+        entry: >-
+          --platform linux/amd64 -e HOME=/tmp
+          mcr.microsoft.com/powershell:7.5-ubuntu-24.04
+          pwsh -NoProfile -NonInteractive -File scripts/Invoke-PSScriptAnalyzer.ps1
+        files: \.ps(d|m)?1$
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

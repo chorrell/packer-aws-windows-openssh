@@ -7,12 +7,12 @@ $ErrorActionPreference = 'Stop'
 # Install OpenSSH using Add-WindowsCapability
 # See: https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows
 
-Write-Host 'Installing and starting ssh-agent'
+Write-Output 'Installing and starting ssh-agent'
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 Set-Service -Name ssh-agent -StartupType Automatic
 Start-Service ssh-agent
 
-Write-Host 'Installing and starting sshd'
+Write-Output 'Installing and starting sshd'
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service -Name sshd -StartupType Automatic
 Start-Service sshd
