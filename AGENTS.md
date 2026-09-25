@@ -23,7 +23,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
     - Checks that an encrypted base AMI (`Purpose=encrypted-base-ami`) exists, failing with instructions to run `refresh-base-ami.yml` if not, and warns if it's a copy of an older Amazon AMI than the latest
-    - Validates and builds AMIs using Packer (plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
+    - Validates and builds AMIs using Packer (version pinned by the workflow's `PACKER_VERSION` env var, which Dependabot doesn't update, so bump it by hand; plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
     - Launches `t3a.xlarge` test instances from the built AMI in a temporary security group that only allows SSH from the runner's public IP, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Verifies all AMI snapshots are encrypted
