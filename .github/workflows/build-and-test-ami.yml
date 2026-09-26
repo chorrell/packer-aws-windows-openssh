@@ -43,14 +43,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Cache Packer plugins
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.config/packer/plugins
-          key: ${{ runner.os }}-packer-${{ hashFiles('aws-windows-ssh.pkr.hcl') }}
-          restore-keys: |
-            ${{ runner.os }}-packer-
-
       - name: Initialize Packer
         env:
           # Only plugin installation needs the token (avoids GitHub API rate limits)

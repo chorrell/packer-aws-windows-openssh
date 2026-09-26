@@ -23,7 +23,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
 - **CI/CD**: GitHub Actions workflows in [`.github/workflows/`](./.github/workflows/):
   - [`build-and-test-ami.yml`](./.github/workflows/build-and-test-ami.yml): Comprehensive end-to-end testing on pull requests and pushes to `main`:
     - Checks that an encrypted base AMI (`Purpose=encrypted-base-ami`) exists, failing with instructions to run `refresh-base-ami.yml` if not, and warns if it's a copy of an older Amazon AMI than the latest
-    - Validates and builds AMIs using Packer preinstalled on the runner image (not pinned; `hashicorp/setup-packer` isn't used because its `api.releases.hashicorp.com` lookups intermittently fail with 504s), recording the Packer, `packer-plugin-amazon`, and runner image versions in a notice annotation and the job summary (plugins cached keyed on template hash); CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
+    - Validates and builds AMIs using Packer preinstalled on the runner image (not pinned; `hashicorp/setup-packer` isn't used because its `api.releases.hashicorp.com` lookups intermittently fail with 504s), recording the Packer, `packer-plugin-amazon`, and runner image versions in a notice annotation and the job summary; plugins aren't cached, since `packer init` doesn't upgrade an installed plugin, so a cache would freeze `packer-plugin-amazon` at whatever version was first cached; CI builds pass `-var "enable_fast_launch=false"` to skip Fast Launch AMI pre-provisioning overhead
     - All Packer and workflow-created AWS resources are tagged `WorkflowRunId=${{ github.run_id }}` to enable safe cancellation
     - Launches `t3a.xlarge` test instances from the built AMI in a temporary security group that only allows SSH from the runner's public IP, trying each eligible subnet/AZ in turn if launch fails with `InsufficientInstanceCapacity`; waits for `instance-status-ok` (OS health checks) before attempting SSH, reducing retry flakiness
     - Verifies all AMI snapshots are encrypted
@@ -75,7 +75,7 @@ This repository builds an AWS Windows AMI with OpenSSH pre-installed, using Pack
   - Set up `AWS_ROLE_ARN` secret in GitHub repository settings
   - On pull requests to `main` and on pushes to `main`, workflows will automatically:
     - Run Pester unit tests for PowerShell scripts (JUnit XML results uploaded as `pester-results` artifact; results also published as a GitHub Check)
-    - Validate and build AMIs with Packer (plugins cached between runs)
+    - Validate and build AMIs with Packer (latest `packer-plugin-amazon` matching `~> 1` on each run)
     - Launch test instances and verify SSH connectivity
     - Test IMDSv2 enforcement (block IMDSv1, verify IMDSv2 works)
     - Lint PowerShell scripts with PSScriptAnalyzer (findings annotated inline on the PR)
