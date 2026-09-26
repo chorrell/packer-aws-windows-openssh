@@ -18,9 +18,6 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  # Pinned for reproducible builds; Dependabot doesn't update this, so bump it
-  # by hand (see https://releases.hashicorp.com/packer/)
-  PACKER_VERSION: 1.16.1
 
 permissions:
   id-token: write
@@ -46,11 +43,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Packer
-        uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
-        with:
-          version: ${{ env.PACKER_VERSION }}
-
       - name: Cache Packer plugins
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -64,6 +56,26 @@ jobs:
           # Only plugin installation needs the token (avoids GitHub API rate limits)
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: packer init ./aws-windows-ssh.pkr.hcl
+
+      # Packer comes preinstalled on the runner image (hashicorp/setup-packer's
+      # release lookups intermittently fail with 504s) and isn't pinned, and
+      # the amazon plugin floats within "~> 1", so record the versions used
+      - name: Record Packer Versions
+        run: |
+          PACKER=$(packer version | head -n 1)
+          # Packer uses the highest installed version that matches the constraint
+          PLUGIN=$(packer plugins installed | grep -o 'packer-plugin-amazon_v[0-9][^_]*' | sort -V | tail -n 1 | sed 's/_/ /')
+          RUNNER_IMAGE="${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          echo "::notice title=Packer versions::${PACKER}, ${PLUGIN:-packer-plugin-amazon unknown} (runner image ${RUNNER_IMAGE})"
+          {
+            echo "### Packer versions"
+            echo ""
+            echo "| Component | Version |"
+            echo "|---|---|"
+            echo "| Packer | ${PACKER#Packer } |"
+            echo "| packer-plugin-amazon | ${PLUGIN#packer-plugin-amazon } |"
+            echo "| Runner image | ${RUNNER_IMAGE} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate Packer Template
         run: packer validate ./aws-windows-ssh.pkr.hcl
