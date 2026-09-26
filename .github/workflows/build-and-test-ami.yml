@@ -18,6 +18,9 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  # Newer CPU and higher EBS bandwidth than t3a.xlarge for Windows' first boot,
+  # at a lower price (Windows licensing is per vCPU)
+  TEST_INSTANCE_TYPE: m7i-flex.large
 
 permissions:
   id-token: write
@@ -155,11 +158,23 @@ jobs:
             --output text \
             --region ${{ env.AWS_REGION }})
 
-          # Collect all subnets in AZs that support t3a.xlarge so the launch step
-          # can try each one in turn if an AZ has InsufficientInstanceCapacity.
-          # t3a.xlarge is supported in: us-east-1a, us-east-1b, us-east-1c, us-east-1d, us-east-1f
+          # Collect all subnets in AZs that offer the test instance type so the
+          # launch step can try each one in turn if an AZ has
+          # InsufficientInstanceCapacity
+          AZS=$(aws ec2 describe-instance-type-offerings \
+            --location-type availability-zone \
+            --filters "Name=instance-type,Values=${TEST_INSTANCE_TYPE}" \
+            --query "InstanceTypeOfferings[].Location" \
+            --output text \
+            --region ${{ env.AWS_REGION }} | tr '\t' ',')
+          if [ -z "${AZS}" ]; then
+            echo "❌ ${TEST_INSTANCE_TYPE} isn't offered in any ${{ env.AWS_REGION }} AZ"
+            exit 1
+          fi
+          echo "${TEST_INSTANCE_TYPE} is offered in: ${AZS}"
+
           SUBNET_IDS=$(aws ec2 describe-subnets \
-            --filters "Name=vpc-id,Values=${VPC_ID}" "Name=availability-zone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
+            --filters "Name=vpc-id,Values=${VPC_ID}" "Name=availability-zone,Values=${AZS}" \
             --query "Subnets[*].SubnetId" \
             --output text \
             --region ${{ env.AWS_REGION }})
@@ -204,7 +219,7 @@ jobs:
             echo "Trying subnet ${SUBNET_ID}..."
             if INSTANCE_ID=$(aws ec2 run-instances \
               --image-id "${AMI_ID}" \
-              --instance-type t3a.xlarge \
+              --instance-type "${TEST_INSTANCE_TYPE}" \
               --key-name "${KEY_NAME}" \
               --security-group-ids "${SECURITY_GROUP_ID}" \
               --subnet-id "${SUBNET_ID}" \
@@ -265,12 +280,13 @@ jobs:
             IdentityFile $(pwd)/test-key
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
-            ConnectTimeout 30
+            ConnectTimeout 10
           EOF
 
-          # Retry SSH connection with longer wait times if needed
-          MAX_ATTEMPTS=20
-          WAIT_TIME=30
+          # Poll often so the test starts soon after sshd is ready (up to ~15
+          # minutes: each failed attempt takes up to ConnectTimeout + WAIT_TIME)
+          MAX_ATTEMPTS=45
+          WAIT_TIME=10
 
           for i in $(seq 1 "$MAX_ATTEMPTS"); do
             echo "SSH attempt $i/$MAX_ATTEMPTS..."
