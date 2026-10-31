@@ -1,20 +1,24 @@
 name: Build and Test AMI
 
+# Reusable workflow, called once per Windows version by
+# build-and-test-ami-2022.yml and build-and-test-ami-2025.yml. Each caller is
+# its own workflow run, so the WorkflowRunId-tagged resources (and the Orphan
+# Sweep that deletes them) never mix the two versions' builds.
+
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'aws-windows-ssh.pkr.hcl'
-      - 'files/**'
-      - '.github/workflows/build-and-test-ami.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'aws-windows-ssh.pkr.hcl'
-      - 'files/**'
-      - '.github/workflows/build-and-test-ami.yml'
+  workflow_call:
+    inputs:
+      template:
+        description: Packer template to build
+        type: string
+        required: true
+      windows_version:
+        description: Windows Server version the template builds (2022 or 2025)
+        type: string
+        required: true
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
 
 env:
   AWS_REGION: us-east-1
@@ -26,14 +30,14 @@ permissions:
   id-token: write
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]'
+    env:
+      TEMPLATE: ${{ inputs.template }}
+      WINDOWS_VERSION: ${{ inputs.windows_version }}
+      # Amazon's base AMI; the encrypted copy is named encrypted-<source name>
+      SOURCE_AMI_NAME: Windows_Server-${{ inputs.windows_version }}-English-Full-Base-*
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +54,7 @@ jobs:
         env:
           # Only plugin installation needs the token (avoids GitHub API rate limits)
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: packer init ./aws-windows-ssh.pkr.hcl
+        run: packer init "./${TEMPLATE}"
 
       # Packer comes preinstalled on the runner image (hashicorp/setup-packer's
       # release lookups intermittently fail with 504s) and isn't pinned, and
@@ -73,30 +77,31 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate Packer Template
-        run: packer validate ./aws-windows-ssh.pkr.hcl
+        run: packer validate "./${TEMPLATE}"
 
       - name: Check Encrypted Base AMI
         run: |
           # Builds start from the encrypted copy maintained by refresh-base-ami.yml,
-          # which also keeps copies of other Windows versions, so filter by name
+          # which keeps copies of each Windows version, so filter by name
           # shellcheck disable=SC2016 # backticks are JMESPath literals, not expansions
           read -r BASE_ID BASE_SOURCE < <(aws ec2 describe-images \
             --owners self \
-            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=name,Values=encrypted-Windows_Server-2022-English-Full-Base-*" "Name=state,Values=available" \
+            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=name,Values=encrypted-${SOURCE_AMI_NAME}" "Name=state,Values=available" \
             --query 'sort_by(Images,&CreationDate)[-1].[ImageId, Tags[?Key==`SourceAmiId`]|[0].Value]' \
             --output text \
             --region ${{ env.AWS_REGION }})
           if [ -z "${BASE_ID}" ] || [ "${BASE_ID}" = "None" ]; then
-            echo "::error::No encrypted base AMI found. Run the 'Refresh Encrypted Base AMI' workflow first."
+            echo "::error::No encrypted Windows Server ${WINDOWS_VERSION} base AMI found. Run the 'Refresh Encrypted Base AMI' workflow first."
             exit 1
           fi
           LATEST=$(aws ec2 describe-images \
             --owners amazon \
-            --filters "Name=name,Values=Windows_Server-2022-English-Full-Base-*" \
+            --filters "Name=name,Values=${SOURCE_AMI_NAME}" \
             --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
             --output text \
             --region ${{ env.AWS_REGION }})
           echo "Encrypted base AMI: ${BASE_ID} (copy of ${BASE_SOURCE}); latest Amazon AMI: ${LATEST}"
+          echo "LATEST_AMAZON_AMI=${LATEST}" >> "$GITHUB_ENV"
           if [ "${BASE_SOURCE}" != "${LATEST}" ]; then
             echo "::warning::Encrypted base AMI ${BASE_ID} is a copy of ${BASE_SOURCE}, but Amazon's latest is ${LATEST}. Run the 'Refresh Encrypted Base AMI' workflow to pick up the latest patches."
           fi
@@ -105,9 +110,9 @@ jobs:
         env:
           PKR_VAR_workflow_run_id: ${{ github.run_id }}
           PKR_VAR_source_ami_owner: self
-          PKR_VAR_source_ami_name: encrypted-Windows_Server-2022-English-Full-Base-*
+          PKR_VAR_source_ami_name: encrypted-${{ env.SOURCE_AMI_NAME }}
         run: |
-          packer build -var "enable_fast_launch=false" ./aws-windows-ssh.pkr.hcl
+          packer build -var "enable_fast_launch=false" "./${TEMPLATE}"
           AMI_ID=$(jq -r '.builds[-1].artifact_id' packer-manifest.json | cut -d: -f2)
           echo "AMI_ID=${AMI_ID}" >> "$GITHUB_ENV"
 
@@ -124,6 +129,28 @@ jobs:
             exit 1
           fi
           echo "✅ All AMI snapshots are encrypted"
+
+      - name: Verify AMI Boot Mode
+        run: |
+          # Windows Server 2025 AMIs boot in UEFI mode (2022 leaves it unset), so
+          # check the built AMI kept the boot mode of Amazon's AMI through the
+          # encrypted copy and Packer's image creation
+          EXPECTED=$(aws ec2 describe-images \
+            --image-ids "${LATEST_AMAZON_AMI}" \
+            --query "Images[0].BootMode" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          ACTUAL=$(aws ec2 describe-images \
+            --image-ids "${AMI_ID}" \
+            --query "Images[0].BootMode" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Boot mode: ${ACTUAL} (Amazon's AMI: ${EXPECTED})"
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "❌ AMI boot mode ${ACTUAL} doesn't match Amazon's ${EXPECTED}"
+            exit 1
+          fi
+          echo "✅ AMI boot mode matches Amazon's AMI"
 
       - name: Generate SSH Key Pair
         run: |
@@ -295,6 +322,26 @@ jobs:
 
           echo "❌ SSH connection test failed after $MAX_ATTEMPTS attempts"
           exit 1
+
+      - name: Verify Windows Version
+        run: |
+          CAPTION=$(ssh test-instance '(Get-CimInstance Win32_OperatingSystem).Caption' | tr -d '\r')
+          echo "Operating system: ${CAPTION}"
+          if [[ "${CAPTION}" != *"Windows Server ${WINDOWS_VERSION}"* ]]; then
+            echo "❌ Expected Windows Server ${WINDOWS_VERSION}"
+            exit 1
+          fi
+          echo "✅ Running Windows Server ${WINDOWS_VERSION}"
+
+      - name: Log sshd Version and Configuration
+        # Diagnostic only: the SetupSsh.ps1 transcript is removed from the AMI,
+        # so record the OpenSSH version and effective sshd settings here
+        continue-on-error: true
+        run: |
+          # No quotes in the command: sshd passes it to the default shell
+          # (PowerShell) on a command line, which can mangle quoting
+          # shellcheck disable=SC2016 # $env is PowerShell, not shell
+          ssh test-instance '(Get-Item $env:WINDIR\System32\OpenSSH\sshd.exe).VersionInfo.ProductVersion; & $env:WINDIR\System32\OpenSSH\sshd.exe -T'
 
       - name: Test Password Authentication Disabled
         run: |

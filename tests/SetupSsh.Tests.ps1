@@ -30,6 +30,11 @@ Describe "SetupSsh Script Configuration" {
             $scriptContent | Should -Match "New-NetFirewallRule.*OpenSSH-Server-In-TCP"
         }
 
+        It "should enable the OpenSSH firewall rule for all profiles" {
+            $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
+            $scriptContent | Should -Match "Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Enabled True -Profile Any"
+        }
+
         It "should allow inbound SSH traffic on port 22" {
             $scriptContent = Get-Content -Path "./files/SetupSsh.ps1" -Raw
             $scriptContent | Should -Match "LocalPort\s+22"

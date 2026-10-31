@@ -1,0 +1,41 @@
+name: Build and Test AMI (2025)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'aws-windows-ssh-2025.pkr.hcl'
+      - 'files/**'
+      - '.github/workflows/build-and-test-ami.yml'
+      - '.github/workflows/build-and-test-ami-2025.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'aws-windows-ssh-2025.pkr.hcl'
+      - 'files/**'
+      - '.github/workflows/build-and-test-ami.yml'
+      - '.github/workflows/build-and-test-ami-2025.yml'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # Dependabot PRs can't use the AWS credentials
+    if: github.actor != 'dependabot[bot]'
+    permissions:
+      id-token: write
+      contents: read
+    # A job-level ./ call already runs the caller's commit; actionlint doesn't
+    # accept the $/ self-repository syntax yet
+    uses: ./.github/workflows/build-and-test-ami.yml # zizmor: ignore[self-repository]
+    with:
+      template: aws-windows-ssh-2025.pkr.hcl
+      windows_version: '2025'
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}

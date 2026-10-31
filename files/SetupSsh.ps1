@@ -11,7 +11,9 @@ $ErrorActionPreference = 'Stop'
 $transcriptPath = Join-Path $env:ProgramData 'Amazon\EC2Launch\log\SetupSsh-transcript.log'
 Start-Transcript -Path $transcriptPath -Append -IncludeInvocationHeader
 
-# Install OpenSSH using Add-WindowsCapability
+# Install OpenSSH using Add-WindowsCapability. Windows Server 2025 ships
+# OpenSSH installed but not enabled, so there this is a no-op and the
+# Set-Service/Start-Service calls are what turn it on.
 # See: https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows
 
 Write-Output 'Installing and starting ssh-agent'
@@ -42,6 +44,9 @@ if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyCon
 } else {
     Write-Output "Firewall rule 'OpenSSH-Server-In-TCP' has been created and exists."
 }
+# The rule may exist but be disabled or limited to some profiles (Windows
+# Server 2025 ships it with the OS), so always enable it for every profile
+Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Enabled True -Profile Any
 
 # Set default shell to Powershell
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force

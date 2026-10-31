@@ -1,16 +1,19 @@
 # Windows AMI with ssh
 
-[![Build and Test AMI](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami.yml)
+[![Build and Test AMI (2022)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami-2022.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami-2022.yml)
+[![Build and Test AMI (2025)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami-2025.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/build-and-test-ami-2025.yml)
 [![Test PowerShell Scripts](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/test.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/test.yml)
 [![PSScriptAnalyzer](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/PSScriptAnalyzer.yml/badge.svg)](https://github.com/chorrell/packer-aws-windows-openssh/actions/workflows/PSScriptAnalyzer.yml)
 
-This repository contains a Packer template and supporting files for creating an AWS Windows AMI with OpenSSH. The code in this repository is inspired by this [blog post](https://operator-error.com/2018/04/16/windows-amis-with-even/) and accompanying [code](https://github.com/jen20/packer-aws-windows-ssh).
+This repository contains Packer templates and supporting files for creating AWS Windows AMIs with OpenSSH. The code in this repository is inspired by this [blog post](https://operator-error.com/2018/04/16/windows-amis-with-even/) and accompanying [code](https://github.com/jen20/packer-aws-windows-ssh).
 
 This is an updated implementation of `packer-aws-windows-ssh` with the following changes:
 
-- The Packer template `aws-windows-ssh.pkr.hcl` is coded in [HCL2](https://developer.hashicorp.com/packer/guides/hcl) rather than JSON.
-- The image is based on Windows Server 2022
-- OpenSSH is installed with `Add-WindowsCapability` per <https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows>
+- The Packer templates are coded in [HCL2](https://developer.hashicorp.com/packer/guides/hcl) rather than JSON.
+- There are two templates, which share the scripts in `files/`:
+  - `aws-windows-ssh.pkr.hcl` builds a Windows Server 2022 image (AMI names start with `windows-base-2022`)
+  - `aws-windows-ssh-2025.pkr.hcl` builds a Windows Server 2025 image (AMI names start with `windows-base-2025`)
+- OpenSSH is installed with `Add-WindowsCapability` per <https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows>. Windows Server 2025 ships OpenSSH installed but not enabled, so the same script only enables it there.
 - The code for downloading the ssh key is somewhat simplified and saves it to `$env:ProgramData\ssh\administrators_authorized_keys`
 - Sysprep is run via the newer [EC2launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2launch.html)
 - The template enables [Fast Launch](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/win-ami-config-fast-launch.html) for the AMI (see `enable_fast_launch = true`)
@@ -37,7 +40,7 @@ export AWS_DEFAULT_REGION="ca-central-1"
 Once that's setup you'll need to initialize the template:
 
 ```bash
-packer init .
+packer init aws-windows-ssh.pkr.hcl
 ```
 
 Now build the image:
@@ -45,6 +48,10 @@ Now build the image:
 ```bash
 packer build aws-windows-ssh.pkr.hcl
 ```
+
+For Windows Server 2025, use `aws-windows-ssh-2025.pkr.hcl` instead. Always name the template file: Packer loads every `*.pkr.hcl` file in a directory, so `packer init .` and `packer build .` fail with duplicate definitions.
+
+The Windows Server 2025 AMIs boot in UEFI mode and support [Nitro](https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-nitro-instances.html) instance types only. The build's spot instance types and CI's test instance type all qualify.
 
 ## Encryption and build time
 
@@ -64,6 +71,8 @@ packer build \
   -var "source_ami_name=encrypted-Windows_Server-2022-English-Full-Base-*" \
   aws-windows-ssh.pkr.hcl
 ```
+
+For Windows Server 2025, use `encrypted-Windows_Server-2025-English-Full-Base-*` and `aws-windows-ssh-2025.pkr.hcl`.
 
 CI does this. The [`refresh-base-ami.yml`](.github/workflows/refresh-base-ami.yml) workflow checks weekly for new AWS Windows Server 2022 and 2025 base AMIs, copies each one encrypted as `encrypted-<source name>` (tagged `Purpose=encrypted-base-ami`), and keeps the newest 2 copies of each version. The first copy of each new base AMI takes the full-copy time once. The CI build warns if the copy is behind Amazon's latest AMI. To create a copy by hand in another account or region:
 
@@ -125,7 +134,7 @@ Only pass the profile when debugging. Opening a session creates a local administ
 
 ## Customizing the image
 
-The image intentionally includes only what's needed for SSH access. To add your own software or configuration, add a provisioner to the `build` block in `aws-windows-ssh.pkr.hcl`, before the `PrepareImage.ps1` provisioner. `PrepareImage.ps1` must run last because it removes build-time SSH keys and runs Sysprep.
+The image intentionally includes only what's needed for SSH access. To add your own software or configuration, add a provisioner to the `build` block in `aws-windows-ssh.pkr.hcl` (and `aws-windows-ssh-2025.pkr.hcl`, to keep the templates in sync), before the `PrepareImage.ps1` provisioner. `PrepareImage.ps1` must run last because it removes build-time SSH keys and runs Sysprep.
 
 For example, to install a pinned version of [Chocolatey](https://chocolatey.org) and a pinned package:
 

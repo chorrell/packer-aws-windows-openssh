@@ -1,7 +1,8 @@
 # AWS OIDC Setup for GitHub Actions
 
 This document explains how to configure AWS IAM OIDC authentication for
-the `build-and-test-ami.yml` workflow.
+the `build-and-test-ami-2022.yml` and `build-and-test-ami-2025.yml` workflows,
+which both call the reusable `build-and-test-ami.yml` workflow.
 
 ## Why OIDC?
 
@@ -84,6 +85,9 @@ The trust policy only accepts tokens whose subject is either:
   plus the scheduled and manual `cleanup-orphans.yml` runs
 - `repo:ORG/packer-aws-windows-openssh:pull_request`: pull requests from
   branches in this repository
+
+The reusable `build-and-test-ami.yml` workflow's tokens carry the calling
+workflow's subject, so it needs no extra subject.
 
 Forked pull requests and Dependabot runs don't receive an OIDC token or
 secrets. IAM Access Analyzer warns about the `pull_request` subject because it
@@ -210,7 +214,9 @@ the workflow once. The first copy is a full encrypted snapshot and takes about
 To verify the setup is working:
 
 1. Create a pull request to the `main` branch
-2. The `build-and-test-ami.yml` workflow will automatically trigger
+2. The `build-and-test-ami-2022.yml` and `build-and-test-ami-2025.yml`
+   workflows will automatically trigger if the pull request changes a
+   template, `files/`, or one of those workflows
 3. Check the workflow logs to ensure AWS authentication succeeds
 
 ## Troubleshooting
