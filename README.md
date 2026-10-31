@@ -65,7 +65,7 @@ packer build \
   aws-windows-ssh.pkr.hcl
 ```
 
-CI does this. The [`refresh-base-ami.yml`](.github/workflows/refresh-base-ami.yml) workflow checks weekly for a new AWS base AMI, copies it encrypted as `encrypted-<source name>` (tagged `Purpose=encrypted-base-ami`), and keeps the newest 2 copies. The first copy of each new base AMI takes the full-copy time once. The CI build warns if the copy is behind Amazon's latest AMI. To create a copy by hand in another account or region:
+CI does this. The [`refresh-base-ami.yml`](.github/workflows/refresh-base-ami.yml) workflow checks weekly for new AWS Windows Server 2022 and 2025 base AMIs, copies each one encrypted as `encrypted-<source name>` (tagged `Purpose=encrypted-base-ami`), and keeps the newest 2 copies of each version. The first copy of each new base AMI takes the full-copy time once. The CI build warns if the copy is behind Amazon's latest AMI. To create a copy by hand in another account or region:
 
 ```bash
 aws ec2 copy-image --encrypted \

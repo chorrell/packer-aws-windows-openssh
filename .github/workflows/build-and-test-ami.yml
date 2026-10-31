@@ -77,11 +77,12 @@ jobs:
 
       - name: Check Encrypted Base AMI
         run: |
-          # Builds start from the encrypted copy maintained by refresh-base-ami.yml
+          # Builds start from the encrypted copy maintained by refresh-base-ami.yml,
+          # which also keeps copies of other Windows versions, so filter by name
           # shellcheck disable=SC2016 # backticks are JMESPath literals, not expansions
           read -r BASE_ID BASE_SOURCE < <(aws ec2 describe-images \
             --owners self \
-            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=state,Values=available" \
+            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=name,Values=encrypted-Windows_Server-2022-English-Full-Base-*" "Name=state,Values=available" \
             --query 'sort_by(Images,&CreationDate)[-1].[ImageId, Tags[?Key==`SourceAmiId`]|[0].Value]' \
             --output text \
             --region ${{ env.AWS_REGION }})
