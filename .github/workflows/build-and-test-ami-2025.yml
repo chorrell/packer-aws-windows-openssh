@@ -31,9 +31,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    # A job-level ./ call already runs the caller's commit; actionlint doesn't
-    # accept the $/ self-repository syntax yet
-    uses: ./.github/workflows/build-and-test-ami.yml # zizmor: ignore[self-repository]
+    uses: $/.github/workflows/build-and-test-ami.yml
     with:
       template: aws-windows-ssh-2025.pkr.hcl
       windows_version: '2025'
