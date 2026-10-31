@@ -1,5 +1,5 @@
-# Windows Server 2022. aws-windows-ssh-2025.pkr.hcl is the Windows Server 2025
-# variant; keep the two templates in sync.
+# Windows Server 2022. aws-windows-ssh-2025.pkr.hcl builds Windows Server 2025;
+# keep the two templates in sync (see that file's header).
 
 packer {
   required_plugins {

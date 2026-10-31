@@ -12,7 +12,7 @@ Describe "Packer Templates" {
 
     Context "Windows Server 2022 and 2025 templates stay in sync" {
         It "should differ only in the Windows version" {
-            $template2022 = Get-TemplateCode -Path "./aws-windows-ssh.pkr.hcl"
+            $template2022 = Get-TemplateCode -Path "./aws-windows-ssh-2022.pkr.hcl"
             $template2025 = Get-TemplateCode -Path "./aws-windows-ssh-2025.pkr.hcl"
             $template2025 -replace '2025', '2022' | Should -Be $template2022
         }

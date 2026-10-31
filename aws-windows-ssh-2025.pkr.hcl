@@ -1,4 +1,4 @@
-# Windows Server 2025 variant of aws-windows-ssh.pkr.hcl (Windows Server 2022).
+# Windows Server 2025. aws-windows-ssh-2022.pkr.hcl builds Windows Server 2022.
 # Keep the two templates in sync: only the defaults for ami_name_prefix,
 # image_name and source_ami_name differ. Both share the scripts in files/.
 # Packer loads every *.pkr.hcl in a directory, so build these by file name

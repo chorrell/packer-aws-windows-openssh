@@ -4,7 +4,7 @@ This repository builds AWS Windows Server 2022 and 2025 AMIs with OpenSSH pre-in
 
 ## Architecture Overview
 
-- **Packer Templates**: Two HCL2 templates hold the build logic: [`aws-windows-ssh.pkr.hcl`](./aws-windows-ssh.pkr.hcl) (Windows Server 2022, AMI names `windows-base-2022-*`) and [`aws-windows-ssh-2025.pkr.hcl`](./aws-windows-ssh-2025.pkr.hcl) (Windows Server 2025, AMI names `windows-base-2025-*`). They must stay identical apart from comments and the `ami_name_prefix`, `image_name`, and `source_ami_name` defaults; `tests/Templates.Tests.ps1` enforces this, so change both together. Packer loads every `*.pkr.hcl` in a directory, so always pass the template file name (`packer init aws-windows-ssh.pkr.hcl`), never `.`. The 2025 AMIs boot in UEFI mode and support Nitro instance types only (all the spot types and `TEST_INSTANCE_TYPE` qualify). Each template defines:
+- **Packer Templates**: Two HCL2 templates hold the build logic: [`aws-windows-ssh-2022.pkr.hcl`](./aws-windows-ssh-2022.pkr.hcl) (Windows Server 2022, AMI names `windows-base-2022-*`) and [`aws-windows-ssh-2025.pkr.hcl`](./aws-windows-ssh-2025.pkr.hcl) (Windows Server 2025, AMI names `windows-base-2025-*`). They must stay identical apart from comments and the `ami_name_prefix`, `image_name`, and `source_ami_name` defaults; `tests/Templates.Tests.ps1` enforces this, so change both together. Packer loads every `*.pkr.hcl` in a directory, so always pass the template file name (`packer init aws-windows-ssh-2022.pkr.hcl`), never `.`. The 2025 AMIs boot in UEFI mode and support Nitro instance types only (all the spot types and `TEST_INSTANCE_TYPE` qualify). Each template defines:
   - The base Windows Server AMI (auto-discovered via filters), chosen by the `source_ami_owner` (default `amazon`) and `source_ami_name` (default `Windows_Server-<version>-English-Full-Base-*`) variables. CI sets `source_ami_owner=self` and `source_ami_name=encrypted-Windows_Server-<version>-English-Full-Base-*` to build from the encrypted copy maintained by `refresh-base-ami.yml`, which keeps the AMI snapshot incremental
   - `temporary_security_group_source_public_ip = true` restricts the build instance's temporary SSH security group to the public IP of the host running Packer (instead of `0.0.0.0/0`)
   - Spot instance usage for cost efficiency (c8i/c8a/c7i/c7a/c6i/c6a/m8i/m8a/m7i/m7a/m6i/m6a instance types) with `spot_allocation_strategy = "price-capacity-optimized"` to reduce mid-build spot interruptions
@@ -61,13 +61,13 @@ This repository builds AWS Windows Server 2022 and 2025 AMIs with OpenSSH pre-in
   2. Initialize Packer plugins:
 
      ```sh
-     packer init aws-windows-ssh.pkr.hcl
+     packer init aws-windows-ssh-2022.pkr.hcl
      ```
 
   3. Build the image (use `aws-windows-ssh-2025.pkr.hcl` for Windows Server 2025 in both steps; never `.`, since the two templates' definitions collide):
 
      ```sh
-     packer build aws-windows-ssh.pkr.hcl
+     packer build aws-windows-ssh-2022.pkr.hcl
      ```
 
 - **CI/CD Setup** (for GitHub Actions):
@@ -116,7 +116,7 @@ When making changes to the project, always review AGENTS.md and update it alongs
 
 ## References
 
-- Packer templates: `aws-windows-ssh.pkr.hcl` (2022) and `aws-windows-ssh-2025.pkr.hcl` (2025)
+- Packer templates: `aws-windows-ssh-2022.pkr.hcl` (2022) and `aws-windows-ssh-2025.pkr.hcl` (2025)
 - Provisioning scripts: `files/`
 - CI/CD workflows: `.github/workflows/`
 - AWS OIDC setup guide: `.github/workflows/AWS_OIDC_SETUP.md`

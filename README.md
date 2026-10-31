@@ -11,7 +11,7 @@ This is an updated implementation of `packer-aws-windows-ssh` with the following
 
 - The Packer templates are coded in [HCL2](https://developer.hashicorp.com/packer/guides/hcl) rather than JSON.
 - There are two templates, which share the scripts in `files/`:
-  - `aws-windows-ssh.pkr.hcl` builds a Windows Server 2022 image (AMI names start with `windows-base-2022`)
+  - `aws-windows-ssh-2022.pkr.hcl` builds a Windows Server 2022 image (AMI names start with `windows-base-2022`)
   - `aws-windows-ssh-2025.pkr.hcl` builds a Windows Server 2025 image (AMI names start with `windows-base-2025`)
 - OpenSSH is installed with `Add-WindowsCapability` per <https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows>. Windows Server 2025 ships OpenSSH installed but not enabled, so the same script only enables it there.
 - The code for downloading the ssh key is somewhat simplified and saves it to `$env:ProgramData\ssh\administrators_authorized_keys`
@@ -40,13 +40,13 @@ export AWS_DEFAULT_REGION="ca-central-1"
 Once that's setup you'll need to initialize the template:
 
 ```bash
-packer init aws-windows-ssh.pkr.hcl
+packer init aws-windows-ssh-2022.pkr.hcl
 ```
 
 Now build the image:
 
 ```bash
-packer build aws-windows-ssh.pkr.hcl
+packer build aws-windows-ssh-2022.pkr.hcl
 ```
 
 For Windows Server 2025, use `aws-windows-ssh-2025.pkr.hcl` instead. Always name the template file: Packer loads every `*.pkr.hcl` file in a directory, so `packer init .` and `packer build .` fail with duplicate definitions.
@@ -69,7 +69,7 @@ The template's `source_ami_owner` and `source_ami_name` variables choose the bas
 packer build \
   -var "source_ami_owner=self" \
   -var "source_ami_name=encrypted-Windows_Server-2022-English-Full-Base-*" \
-  aws-windows-ssh.pkr.hcl
+  aws-windows-ssh-2022.pkr.hcl
 ```
 
 For Windows Server 2025, use `encrypted-Windows_Server-2025-English-Full-Base-*` and `aws-windows-ssh-2025.pkr.hcl`.
@@ -114,7 +114,7 @@ The IAM identity that runs Packer also needs [`iam/build-instance-pass-role-poli
 Build with the profile and `-on-error=ask`:
 
 ```bash
-packer build -var "iam_instance_profile=packer-build-ssm" -on-error=ask aws-windows-ssh.pkr.hcl
+packer build -var "iam_instance_profile=packer-build-ssm" -on-error=ask aws-windows-ssh-2022.pkr.hcl
 ```
 
 When the build fails, Packer pauses and leaves the instance running. Find the instance ID in Packer's output (`Instance ID: i-...`) and open a PowerShell session:
@@ -134,7 +134,7 @@ Only pass the profile when debugging. Opening a session creates a local administ
 
 ## Customizing the image
 
-The image intentionally includes only what's needed for SSH access. To add your own software or configuration, add a provisioner to the `build` block in `aws-windows-ssh.pkr.hcl` (and `aws-windows-ssh-2025.pkr.hcl`, to keep the templates in sync), before the `PrepareImage.ps1` provisioner. `PrepareImage.ps1` must run last because it removes build-time SSH keys and runs Sysprep.
+The image intentionally includes only what's needed for SSH access. To add your own software or configuration, add a provisioner to the `build` block in `aws-windows-ssh-2022.pkr.hcl` (and `aws-windows-ssh-2025.pkr.hcl`, to keep the templates in sync), before the `PrepareImage.ps1` provisioner. `PrepareImage.ps1` must run last because it removes build-time SSH keys and runs Sysprep.
 
 For example, to install a pinned version of [Chocolatey](https://chocolatey.org) and a pinned package:
 
