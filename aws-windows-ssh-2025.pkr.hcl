@@ -1,0 +1,161 @@
+# Windows Server 2025. aws-windows-ssh-2022.pkr.hcl builds Windows Server 2022.
+# Keep the two templates in sync: only the defaults for ami_name_prefix,
+# image_name and source_ami_name differ. Both share the scripts in files/.
+# Packer loads every *.pkr.hcl in a directory, so build these by file name
+# (packer build aws-windows-ssh-2025.pkr.hcl), not with "packer build .".
+# The 2025 AMIs boot in UEFI mode and support Nitro instance types only; all
+# the spot_instance_types below qualify.
+
+packer {
+  required_plugins {
+    amazon = {
+      source  = "github.com/hashicorp/amazon"
+      version = "~> 1"
+    }
+  }
+}
+
+variable "ami_name_prefix" {
+  type    = string
+  default = "windows-base-2025"
+}
+
+variable "image_name" {
+  type    = string
+  default = "Windows Server 2025 image with ssh"
+}
+
+variable "enable_fast_launch" {
+  type    = bool
+  default = true
+}
+
+# Where to find the base AMI. Defaults to Amazon's Windows Server 2025 AMI.
+# CI uses an encrypted copy in this account (maintained by refresh-base-ami.yml)
+# so the encrypted build volume's snapshot is incremental instead of a full copy.
+variable "source_ami_owner" {
+  type    = string
+  default = "amazon"
+}
+
+variable "source_ami_name" {
+  type    = string
+  default = "Windows_Server-2025-English-Full-Base-*"
+}
+
+# Optional instance profile for the build instance, for debugging a failed build
+# with SSM Session Manager (see "Debugging a failed build" in README.md). The
+# default (empty) launches the build instance without one; CI doesn't set it.
+variable "iam_instance_profile" {
+  type    = string
+  default = ""
+}
+
+variable "workflow_run_id" {
+  type    = string
+  default = ""
+}
+
+locals { timestamp = regex_replace(timestamp(), "[- TZ:]", "") }
+
+data "amazon-ami" "aws-windows-ssh" {
+  filters = {
+    name                = var.source_ami_name
+    root-device-type    = "ebs"
+    state               = "available"
+    virtualization-type = "hvm"
+  }
+  most_recent = true
+  owners      = [var.source_ami_owner]
+}
+
+source "amazon-ebs" "aws-windows-ssh" {
+  source_ami                  = "${data.amazon-ami.aws-windows-ssh.id}"
+  ami_name                    = "${var.ami_name_prefix}-${local.timestamp}"
+  ami_description             = "${var.image_name}"
+  ami_virtualization_type     = "hvm"
+  associate_public_ip_address = true
+  # Restrict the temporary security group's SSH ingress to the public IP of
+  # the host running Packer instead of 0.0.0.0/0
+  temporary_security_group_source_public_ip = true
+  communicator                              = "ssh"
+  spot_price                                = "auto"
+  # Prefer pools with low interruption risk; the default (lowest-price) picks
+  # the cheapest pool, which is the most likely to be reclaimed mid-build
+  spot_allocation_strategy = "price-capacity-optimized"
+  spot_instance_types      = ["c8i.xlarge", "c8a.xlarge", "c7i.xlarge", "c7a.xlarge", "c6i.xlarge", "c6a.xlarge", "m8i.xlarge", "m8a.xlarge", "m7i.xlarge", "m7a.xlarge", "m6i.xlarge", "m6a.xlarge"]
+  ssh_timeout              = "10m"
+  ssh_username             = "Administrator"
+  ssh_file_transfer_method = "sftp"
+  user_data_file           = "files/SetupSsh.ps1"
+  iam_instance_profile     = var.iam_instance_profile
+  # This ensures the instace has enough disk space and that
+  # the volume_type is gp3 for better performance
+  launch_block_device_mappings {
+    device_name           = "/dev/sda1" # sda1 is the root device for Windows AMIs
+    volume_size           = 100         # The default is 30GB, which isn't enough
+    volume_type           = "gp3"
+    iops                  = 3000 # Default for gp3
+    throughput            = 125  # Default for gp3
+    delete_on_termination = true
+    # Encrypt the build volume at launch (default aws/ebs key) so the AMI and
+    # its snapshots are encrypted without an encrypt_boot copy step
+    encrypted = true
+  }
+  # The encrypted root volume produces a full (non-incremental) snapshot of the
+  # unencrypted base image, which can take over 30 minutes (Packer's default wait)
+  aws_polling {
+    delay_seconds = 30
+    max_attempts  = 120
+  }
+  # Register the AMI so instances launched from it require IMDSv2 by default;
+  # metadata_options below only applies to the build instance
+  imds_support = "v2.0"
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+  fast_launch {
+    enable_fast_launch = var.enable_fast_launch
+  }
+  run_tags = {
+    Name          = "packer-build-${var.ami_name_prefix}"
+    WorkflowRunId = var.workflow_run_id
+  }
+
+  run_volume_tags = {
+    WorkflowRunId = var.workflow_run_id
+  }
+
+  spot_tags = {
+    WorkflowRunId = var.workflow_run_id
+  }
+
+  snapshot_tags = {
+    Name          = "${var.image_name}"
+    BuildTime     = "${local.timestamp}"
+    WorkflowRunId = var.workflow_run_id
+  }
+
+  tags = {
+    Name          = "${var.image_name}"
+    BuildTime     = "${local.timestamp}"
+    WorkflowRunId = var.workflow_run_id
+  }
+}
+
+build {
+  sources = ["source.amazon-ebs.aws-windows-ssh"]
+
+  # Add custom provisioners here; PrepareImage.ps1 must stay last since it runs Sysprep
+  provisioner "powershell" {
+    script           = "files/PrepareImage.ps1"
+    valid_exit_codes = [0, 2300218]
+  }
+
+  post-processor "manifest" {
+    output     = "packer-manifest.json"
+    strip_path = true
+  }
+}

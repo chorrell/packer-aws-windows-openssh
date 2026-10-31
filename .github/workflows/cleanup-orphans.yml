@@ -1,6 +1,7 @@
 name: Cleanup Orphaned AMI Build Resources
 
-# Fallback for runs of build-and-test-ami.yml whose cleanup steps never ran
+# Fallback for runs of build-and-test-ami-2022.yml and build-and-test-ami-2025.yml
+# (which call build-and-test-ami.yml) whose cleanup steps never ran
 # (runner lost, job timeout, forced cancellation). Only deletes resources
 # tagged with the WorkflowRunId of a run that has completed, so builds that
 # are still in progress are never touched.
