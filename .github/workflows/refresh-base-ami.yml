@@ -1,7 +1,7 @@
 name: Refresh Encrypted Base AMI
 
-# Keeps an encrypted copy of the latest Amazon Windows Server 2022 base AMI in
-# this account. Builds launched from an encrypted base share snapshot lineage
+# Keeps an encrypted copy of the latest Amazon Windows Server 2022 and 2025
+# base AMIs in this account. Builds launched from an encrypted base share snapshot lineage
 # with it, so the AMI snapshot is incremental instead of a full copy.
 # Uses a separate role (AWS_BASE_AMI_ROLE_ARN) that trusts only main, so the
 # CI role never needs ec2:CopyImage.
@@ -21,14 +21,21 @@ concurrency:
 
 env:
   AWS_REGION: us-east-1
-  SOURCE_NAME_FILTER: Windows_Server-2022-English-Full-Base-*
-  # Number of encrypted base AMIs to keep (older ones are deregistered)
+  # Number of encrypted base AMIs to keep per Windows version (older ones are
+  # deregistered)
   KEEP: 2
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      # A failed copy of one version shouldn't cancel the other
+      fail-fast: false
+      matrix:
+        windows_version: ['2022', '2025']
+    env:
+      SOURCE_NAME_FILTER: Windows_Server-${{ matrix.windows_version }}-English-Full-Base-*
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -78,9 +85,11 @@ jobs:
 
       - name: Prune old encrypted base AMIs
         run: |
-          # Newest first; keep the newest $KEEP available copies
+          # Newest first; keep the newest $KEEP available copies of this Windows
+          # version. Filter by name (copies are named encrypted-<source name>),
+          # since the tags don't record the version
           mapfile -t OLD < <(aws ec2 describe-images --region "${AWS_REGION}" --owners self \
-            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=state,Values=available" \
+            --filters "Name=tag:Purpose,Values=encrypted-base-ami" "Name=name,Values=encrypted-${SOURCE_NAME_FILTER}" "Name=state,Values=available" \
             --query 'reverse(sort_by(Images,&CreationDate))[].ImageId' --output text | tr '\t' '\n' | tail -n +"$((KEEP + 1))")
           for ami in "${OLD[@]}"; do
             [ -n "${ami}" ] || continue

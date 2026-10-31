@@ -165,7 +165,7 @@ manual runs).
 ### 6. Encrypted Base AMI Refresh Role
 
 The `refresh-base-ami.yml` workflow keeps an encrypted copy of the latest
-Amazon Windows Server 2022 base AMI in the account (tagged
+Amazon Windows Server 2022 and 2025 base AMIs in the account (tagged
 `Purpose=encrypted-base-ami`). It runs weekly and can be started manually from
 the **Actions** tab.
 
