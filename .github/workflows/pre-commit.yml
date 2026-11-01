@@ -1,0 +1,19 @@
+---
+name: pre-commit
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    uses: chorrell/workflows/.github/workflows/pre-commit.yml@v1
+    with:
+      # packer_fmt needs packer, which the runner lacks
+      skip: packer_fmt
