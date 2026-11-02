@@ -16,9 +16,7 @@ on:
         type: boolean
         default: true
 
-permissions:
-  id-token: write
-  actions: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}
@@ -30,6 +28,9 @@ env:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      actions: read
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -171,3 +172,12 @@ jobs:
             --query "KeyPairs[].[KeyName, ${TAG_QUERY}, CreateTime]" --output json | rows)
 
           echo "Done (dry run: ${DRY_RUN})"
+
+  alert:
+    needs: [cleanup]
+    if: ${{ !cancelled() }}
+    permissions:
+      issues: write # open, comment on and close the alert issue
+    uses: chorrell/workflows/.github/workflows/scheduled-failure-issue.yml@v1
+    with:
+      failed: ${{ contains(needs.*.result, 'failure') }}

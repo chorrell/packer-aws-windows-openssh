@@ -12,8 +12,7 @@ on:
     - cron: '23 7 * * 3'
   workflow_dispatch:
 
-permissions:
-  id-token: write
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}
@@ -28,6 +27,8 @@ env:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     timeout-minutes: 120
     strategy:
       # A failed copy of one version shouldn't cancel the other
@@ -101,3 +102,12 @@ jobs:
               aws ec2 delete-snapshot --region "${AWS_REGION}" --snapshot-id "${snap}"
             done
           done
+
+  alert:
+    needs: [refresh]
+    if: ${{ !cancelled() }}
+    permissions:
+      issues: write # open, comment on and close the alert issue
+    uses: chorrell/workflows/.github/workflows/scheduled-failure-issue.yml@v1
+    with:
+      failed: ${{ contains(needs.*.result, 'failure') }}
