@@ -26,6 +26,27 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
+  # GitHub disables scheduled workflows in public repos after 60 days without
+  # repository activity. Re-enabling them through the API resets that timer,
+  # so this daily run keeps both scheduled workflows alive between commits.
+  keepalive:
+    runs-on: ubuntu-slim
+    permissions:
+      actions: write
+    steps:
+      - name: Re-enable scheduled workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for WORKFLOW in cleanup-orphans.yml refresh-base-ami.yml; do
+            curl --fail --silent --show-error -X PUT \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW}/enable"
+            echo "Re-enabled ${WORKFLOW}"
+          done
+
   cleanup:
     runs-on: ubuntu-latest
     permissions:
@@ -174,7 +195,7 @@ jobs:
           echo "Done (dry run: ${DRY_RUN})"
 
   alert:
-    needs: [cleanup]
+    needs: [keepalive, cleanup]
     if: ${{ !cancelled() }}
     permissions:
       issues: write # open, comment on and close the alert issue
